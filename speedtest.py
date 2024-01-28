@@ -538,11 +538,7 @@ class TestSuite(object):
 
 def main():
     logger.setLevel(logging.DEBUG)
-    #http = HttpClient()
-    #print(http.get(str(URL('//tayhoon.sakura.ne.jp/_.php'))).decode('utf-8'))
     t = TestSuite()
-    s = NullServer(t)
-    #print(t.servers.get_closest_servers())
     print('== Selected Server')
     print(t.best_server)
     print('{}km'.format(t.best_server.distance))
