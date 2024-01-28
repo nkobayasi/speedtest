@@ -2,6 +2,8 @@
 # encoding: utf-8
 
 from functools import wraps
+import io
+import os
 import math
 import time
 import ipaddress
@@ -186,10 +188,45 @@ class Config(object):
             'upload_max': upload_count * size_count, }
         print(self.p)
 
-class HTTPDownloader(threading.Thread):
+class HTTPUploadData(object):
+    def __init__(self, size):
+        chars = b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        self.size = int(size)
+        self.data = io.BytesIO()
+        self.data.write(b'content1=')
+        for _ in range(int(round(float(size) / len(chars))) + 1):
+            self.data.write(chars)
+        self.data.truncate(size)
+        self.data.seek(0, os.SEEK_SET)
+        
+    def read(self, size=10240):
+        return self.data.read(size)
+    
+    def eof(self):
+        return self.size <= self.data.tell()
+
+class HTTPUploader(threading.Thread, HttpClient):
     def __init__(self, resultq, request):
         super().__init__()
         self.request = request
+        self.request.add_header('User-Agent', self.user_agent)
+        self.resultq = resultq
+
+    def run(self):
+        try:
+            start = time.time()
+            with urllib.request.urlopen(self.request) as f:
+                f.read()
+                finish = time.time()
+            self.resultq.put({'size': int(self.request.get_header('Content-length')), 'elapsed': finish - start, })
+        except Exception as e:
+            self.resultq.put({'size': 0, 'elapsed': -1, })
+
+class HTTPDownloader(threading.Thread, HttpClient):
+    def __init__(self, resultq, request):
+        super().__init__()
+        self.request = request
+        self.request.add_header('User-Agent', self.user_agent)
         self.resultq = resultq
         
     def run(self):
@@ -283,6 +320,7 @@ class Server(object):
         resultq = multiprocessing.Queue()
         for request_path in request_paths:
             request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, i, )})),
+                method='GET',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache', })
@@ -291,15 +329,39 @@ class Server(object):
             thread.start()
             threads.append(thread)
             i += 1
-            
-        #for thread in threads:
-        #    thread.join()
         
         results = []
         for _ in range(len(request_paths)):
             results.append(resultq.get())
         return results
         
+    def upload(self):
+        sizes = []
+        for size in self.testsuite.config.p['sizes']['upload']:
+            for _ in range(0, self.testsuite.config.p['counts']['upload']):
+                sizes.append(size)
+
+        threads = []
+        resultq = multiprocessing.Queue()
+        for size in sizes:
+            data = HTTPUploadData(size=size)
+            request = urllib.request.Request(self.url,
+                method='POST',
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                    'Cache-Control': 'no-cache',
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Length': size, },
+                data=data.data)
+            print(request.full_url)
+            thread = HTTPUploader(resultq=resultq, request=request)
+            thread.start()
+            threads.append(thread)
+        
+        results = []
+        for _ in range(len(sizes)):
+            results.append(resultq.get())
+        return results
 
 class MiniServer(Server):
     def __init__(self, testsuite):
@@ -391,17 +453,25 @@ class TestSuite(object):
     def download(self):
         return self.get_best_server().download()
 
+    def upload(self):
+        return self.get_best_server().upload()
+
 def main():
     #http = HttpClient()
     #print(http.get(str(URL('//tayhoon.sakura.ne.jp/_.php'))).decode('utf-8'))
     t = TestSuite()
-    #s = NullServer(t)
+    s = NullServer(t)
     #print(t.servers.get_closest_servers())
     #print(t.get_best_server())
     #print(t.get_best_server().latency)
-    for result in t.download():
-    #for result in s.download():
-        print('{!s}B => {!s}bps'.format(units.VolumeSize(result['size']), units.Bandwidth(result['size']*8.0 / result['elapsed'])))
+    size = 0
+    elapsed = 0.0
+    #for result in t.download():
+    for result in s.upload():
+        size += result['size']
+        elapsed += result['elapsed']
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(result['size']), result['elapsed'], units.Bandwidth(result['size']*8.0 / result['elapsed'])))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
 
 if __name__ == '__main__':
     main()
