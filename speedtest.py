@@ -374,7 +374,7 @@ class Server(object):
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
         for _ in range(2):
-            thread = HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
         
         request_paths = []
         for size in self.testsuite.config.p['sizes']['download']:
@@ -539,8 +539,9 @@ def main():
     t = TestSuite()
     s = NullServer(t)
     #print(t.servers.get_closest_servers())
-    #print(t.get_best_server())
-    #print(t.get_best_server().latency)
+    print('== Selected Server')
+    print(t.get_best_server())
+    print(t.get_best_server().latency)
     print('== Download Results')
     for size, elapsed in t.results.download.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
