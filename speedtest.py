@@ -2,6 +2,7 @@
 # encoding: utf-8
 
 from functools import wraps
+from dataclasses import dataclass
 import io
 import os
 import math
@@ -497,6 +498,11 @@ class Servers(object):
             return sorted(servers, key=lambda server: server.distance)
         return sort_by_distance(self.servers)[:limit]
 
+@dataclass
+class TestSuiteResults:
+    download: DownloadResults
+    upload: UploadResults
+
 class TestSuite(object):
     def __init__(self):
         self.config = Config()
@@ -520,6 +526,11 @@ class TestSuite(object):
 
     def upload(self):
         return self.get_best_server().upload()
+    
+    @property
+    @memoized
+    def results(self):
+        return TestSuiteResults(self.download(), self.upload())
 
 def main():
     logger.setLevel(logging.DEBUG)
@@ -530,18 +541,14 @@ def main():
     #print(t.servers.get_closest_servers())
     #print(t.get_best_server())
     #print(t.get_best_server().latency)
-    print('== Downloading...')
-    dresults = t.download()
-    print('== Uploading...')
-    uresults = t.upload()
     print('== Download Results')
-    for size, elapsed in dresults.histgram.items():
+    for size, elapsed in t.results.download.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
-    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(dresults.total_size), dresults.total_elapsed, units.Bandwidth(dresults.total_size*8.0 / dresults.total_elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(t.results.download.total_size), t.results.download.total_elapsed, units.Bandwidth(t.results.download.total_size*8.0 / t.results.download.total_elapsed)))
     print('== Upload Results')
-    for size, elapsed in uresults.histgram.items():
+    for size, elapsed in t.results.upload.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
-    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(uresults.total_size), uresults.total_elapsed, units.Bandwidth(uresults.total_size*8.0 / uresults.total_elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(t.results.upload.total_size), t.results.upload.total_elapsed, units.Bandwidth(t.results.upload.total_size*8.0 / t.results.upload.total_elapsed)))
 
 if __name__ == '__main__':
     main()
