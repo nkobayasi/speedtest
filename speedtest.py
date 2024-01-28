@@ -152,6 +152,8 @@ class Config(object):
             'server-config': root.getElementsByTagName('server-config')[0],
             'download': root.getElementsByTagName('download')[0],
             'upload': root.getElementsByTagName('upload')[0], }
+        
+        #print(e['server-config'].attributes['ignoreids'].value)
 
         ratio = int(e['upload'].getAttribute('ratio'))
         upload_max = int(e['upload'].getAttribute('maxchunkcount'))
