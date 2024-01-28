@@ -229,7 +229,7 @@ class Server(object):
         times = 3
         latencies = []
         for _ in range(times):
-            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%s' % (time.time() * 1000, _, )}), )), allow_fragments=False)
+            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000, _, )}), )), allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
