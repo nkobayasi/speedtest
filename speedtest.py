@@ -16,6 +16,8 @@ import urllib.request
 import urllib.parse
 import xml.dom
 import xml.dom.minidom
+import logging
+import logging.handlers
 
 import units
 
@@ -35,6 +37,24 @@ cached=memoized
 def memoized_property(func):
     return property(memoized(func))
 cached_property=memoized_property
+
+class StderrHandler(logging.StreamHandler):
+    def __init__(self):
+        super().__init__()
+        self.setFormatter(logging.Formatter('[%(process)d] %(message)s'))
+
+class SyslogHandler(logging.handlers.SysLogHandler):
+    def __init__(self, filename):
+        super().__init__()
+        self.setFormatter(logging.Formatter('%(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
+
+class FileHandler(logging.handlers.WatchedFileHandler):
+    def __init__(self, filename):
+        super().__init__(filename, encoding='utf-8')
+        self.setFormatter(logging.Formatter('[%(asctime)s] [%(process)d] %(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
+
+logger = logging.getLogger('ping').getChild(__name__)
+logger.addHandler(StderrHandler())
 
 class HttpRetrievalError(Exception): pass
 
@@ -223,6 +243,7 @@ class HTTPUploader(threading.Thread, HttpClient):
                     finish = time.time()
                 self.resultq.put({'size': int(request.get_header('Content-length')), 'elapsed': finish - start, })
             except Exception as e:
+                logger.error(e)
                 self.resultq.put({'size': 0, 'elapsed': -1, })
 
 class HTTPDownloader(threading.Thread, HttpClient):
@@ -243,7 +264,8 @@ class HTTPDownloader(threading.Thread, HttpClient):
                     finish = time.time()
                     size = int(f.headers['Content-Length'])
                 self.resultq.put({'size': size, 'elapsed': finish - start, })
-            except Exception:
+            except Exception as e:
+                logger.error(e)
                 self.resultq.put({'size': 0, 'elapsed': -1, })
 
 class Server(object):
@@ -270,7 +292,7 @@ class Server(object):
             cc=element.getAttribute('cc'),
             sponsor=element.getAttribute('sponsor'),
             point=Point(latitude=element.getAttribute('lat'), longitude=element.getAttribute('lon')))
-        print(self)
+        logger.info(self)
         return self
         
     def __repr__(self):
@@ -289,7 +311,7 @@ class Server(object):
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[scheme]
 
-        print(self)
+        logger.info(self)
         times = 3
         latencies = []
         for _ in range(times):
@@ -334,7 +356,7 @@ class Server(object):
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache', })
-            print(request.full_url)
+            logger.info(request.full_url)
             requestq.put(request)
             i += 1
         
@@ -366,7 +388,7 @@ class Server(object):
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'Content-Length': size, },
                 data=data.data)
-            print(request.full_url)
+            logger.info(request.full_url)
             requestq.put(request)
         
         results = []
