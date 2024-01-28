@@ -448,7 +448,7 @@ class Servers(object):
     @property
     @memoized
     def servers(self):
-        results = []
+        servers = []
         http = HttpClient()
         urls = [
             'https://www.speedtest.net/speedtest-servers-static.php',
@@ -461,8 +461,8 @@ class Servers(object):
                 server = Server.fromElement(self.testsuite, element)
                 if server.id in self.testsuite.config.p['ignore_servers']:
                     continue
-                results.append(server)
-        return results
+                servers.append(server)
+        return servers
                 
     def get_closest_servers(self, limit=5):
         def sort_by_distance(servers):
