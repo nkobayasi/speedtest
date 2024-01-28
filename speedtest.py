@@ -249,7 +249,10 @@ class HTTPUploadData(object):
             self.data.write(chars)
         self.data.truncate(size)
         self.data.seek(0, os.SEEK_SET)
-        
+
+    def __len__(self):
+        return self.size
+            
     def read(self, size=10240):
         return self.data.read(size)
     
