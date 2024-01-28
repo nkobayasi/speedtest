@@ -340,9 +340,8 @@ class Server(object):
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[scheme]
 
-        times = 3
         latencies = []
-        for _ in range(times):
+        for _ in range(3):
             request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000, _, )}), )), allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
@@ -367,7 +366,7 @@ class Server(object):
                 if conn:
                     conn.close()
                 conn = None
-        return round((sum(latencies) / (times*2)) * 1000.0, 3)
+        return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
     
     def download(self):
         terminated = threading.Event()
