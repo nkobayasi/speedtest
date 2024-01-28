@@ -2,16 +2,25 @@
 # encoding: utf-8
 
 from functools import wraps
+from dataclasses import dataclass
+import io
+import os
 import math
 import time
 import ipaddress
 import platform
 import ssl
+import threading
+import multiprocessing
 import http.client
 import urllib.request
 import urllib.parse
 import xml.dom
 import xml.dom.minidom
+import logging
+import logging.handlers
+
+import units
 
 __version__ = '2.1.4b1'
 
@@ -29,6 +38,24 @@ cached=memoized
 def memoized_property(func):
     return property(memoized(func))
 cached_property=memoized_property
+
+class StderrHandler(logging.StreamHandler):
+    def __init__(self):
+        super().__init__()
+        self.setFormatter(logging.Formatter('[%(process)d] %(message)s'))
+
+class SyslogHandler(logging.handlers.SysLogHandler):
+    def __init__(self, filename):
+        super().__init__()
+        self.setFormatter(logging.Formatter('%(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
+
+class FileHandler(logging.handlers.WatchedFileHandler):
+    def __init__(self, filename):
+        super().__init__(filename, encoding='utf-8')
+        self.setFormatter(logging.Formatter('[%(asctime)s] [%(process)d] %(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
+
+logger = logging.getLogger('ping').getChild(__name__)
+logger.addHandler(StderrHandler())
 
 class HttpRetrievalError(Exception): pass
 
@@ -58,22 +85,22 @@ class HttpClient(object):
         #return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
     
     def get(self, url, params={}):
-        params.update({'x': '%s.0' % int(time.time() * 1000)})
+        params.update({'x': '%.0f.0' % (time.time() * 1000.0, )})
         request = urllib.request.Request(url + '?' + urllib.parse.urlencode(params),
             headers={
                 'User-Agent': self.user_agent,
                 'Cache-Control': 'no-cache', })
-        print(request.full_url)
+        logger.info(request.full_url)
         with urllib.request.urlopen(request) as f:
             return f.read()
 
     def post(self, url, params={}):
-        request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%s.0' % int(time.time() * 1000)}),
+        request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%.0f.0' % (time.time() * 1000.0, )}),
             headers={
                 'User-Agent': self.user_agent, # Header "Content-Type: application/x-www-form-urlencoded" will be added as a default.
                 'Cache-Control': 'no-cache', },
             data=urllib.parse.urlencode(params).encode('ascii'))
-        print(request.full_url)
+        logger.info(request.full_url)
         with urllib.request.urlopen(request) as f:
             return f.read()
 
@@ -116,7 +143,7 @@ class ISP(object):
         return self
 
     def __repr__(self):
-        return '<ISP: name="{}",rating={:.1f},avg_down={:.1f},avg_up={:.1f}>'.format(self.name, self.rating, self.avg_down, self.avg_up)
+        return '<ISP: name="{}",rating={:.1f},avg=(down={:.1f},up={:.1f})>'.format(self.name, self.rating, self.avg_down, self.avg_up)
 
 class Client(object):
     def __init__(self, ipaddr, cc, point, rating, isp):
@@ -152,6 +179,8 @@ class Config(object):
             'server-config': root.getElementsByTagName('server-config')[0],
             'download': root.getElementsByTagName('download')[0],
             'upload': root.getElementsByTagName('upload')[0], }
+        
+        #print(e['server-config'].attributes['ignoreids'].value)
 
         ratio = int(e['upload'].getAttribute('ratio'))
         upload_max = int(e['upload'].getAttribute('maxchunkcount'))
@@ -178,7 +207,95 @@ class Config(object):
                 'upload': int(e['upload'].getAttribute('testlength')),
                 'download': int(e['download'].getAttribute('testlength')), },
             'upload_max': upload_count * size_count, }
-        print(self.p)
+        logger.info(self.p)
+
+class Results(object):
+    def __init__(self):
+        self.results = []
+        self.histgrams = {}
+        self.total_size = 0
+        self.total_elapsed = 0.0
+        
+    def append(self, result):
+        if result['size'] not in self.histgrams:
+            self.histgrams[result['size']] = []
+        self.histgrams[result['size']].append(result['elapsed'])
+        self.total_size += result['size']
+        self.total_elapsed += result['elapsed']
+        self.results.append(result)
+        
+    @property
+    def histgram(self):
+        results = {}
+        for size, elapsed in self.histgrams.items():
+            results[size] = sum(elapsed) / len(elapsed)
+        return results
+
+class UploadResults(Results):
+    pass
+
+class DownloadResults(Results):
+    pass
+
+class HTTPUploadData(object):
+    def __init__(self, size):
+        chars = b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        self.size = int(size)
+        self.data = io.BytesIO()
+        self.data.write(b'content1=')
+        for _ in range(int(round(float(size) / len(chars))) + 1):
+            self.data.write(chars)
+        self.data.truncate(size)
+        self.data.seek(0, os.SEEK_SET)
+        
+    def read(self, size=10240):
+        return self.data.read(size)
+    
+    def eof(self):
+        return self.size <= self.data.tell()
+
+class HTTPUploader(threading.Thread, HttpClient):
+    def __init__(self, resultq, requestq, terminated):
+        super().__init__()
+        self.requestq = requestq
+        self.resultq = resultq
+        self.terminated = terminated
+
+    def run(self):
+        while not self.terminated.wait(timeout=0.1):
+            try:
+                request = self.requestq.get()
+                request.add_header('User-Agent', self.user_agent)
+                start = time.time()
+                with urllib.request.urlopen(request) as f:
+                    f.read()
+                    finish = time.time()
+                self.resultq.put({'size': int(request.get_header('Content-length')), 'elapsed': finish - start, })
+            except Exception as e:
+                logger.error(e)
+                self.resultq.put({'size': 0, 'elapsed': -1, })
+
+class HTTPDownloader(threading.Thread, HttpClient):
+    def __init__(self, resultq, requestq, terminated):
+        super().__init__()
+        self.requestq = requestq
+        self.resultq = resultq
+        self.terminated = terminated
+        
+    def run(self):
+        while not self.terminated.wait(timeout=0.1):
+            try:
+                request = self.requestq.get()
+                request.add_header('User-Agent', self.user_agent)
+                start = time.time()
+                with urllib.request.urlopen(request) as f:
+                    f.read()
+                    finish = time.time()
+                    size = int(f.headers['Content-Length'])
+                self.resultq.put({'size': size, 'elapsed': finish - start, })
+            except Exception as e:
+                logger.error(e)
+                self.resultq.put({'size': 0, 'elapsed': -1, })
 
 class Server(object):
     def __init__(self, testsuite, id, name, url, host, country, cc, sponsor, point):
@@ -204,7 +321,7 @@ class Server(object):
             cc=element.getAttribute('cc'),
             sponsor=element.getAttribute('sponsor'),
             point=Point(latitude=element.getAttribute('lat'), longitude=element.getAttribute('lon')))
-        print(self)
+        logger.info(self)
         return self
         
     def __repr__(self):
@@ -223,29 +340,94 @@ class Server(object):
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[scheme]
 
-        url = urllib.parse.urlparse(self.url, allow_fragments=False)
         times = 3
         latencies = []
         for _ in range(times):
-            request_url = urllib.parse.urlparse('%s://%s/latency.txt?%s' % (url.scheme, url.netloc, urllib.parse.urlencode({'x': '%s.%s' % (int(time.time() * 1000), _, )}), ), allow_fragments=False)
+            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000, _, )}), )), allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
                 start = time.perf_counter()
-                conn.request('GET', request_path, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'})
+                conn.request('GET', request_path, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                    'Cache-Control': 'no-cache', })
                 response = conn.getresponse()
                 latency = time.perf_counter() - start
                 if not (response.status == 200 and response.read(9) == b'test=test'):
                     raise HttpRetrievalError()
                 latencies.append(latency)
-                print(request_url, 'GET', request_path, response.status, latencies)
+                logger.info(request_url)
+                logger.info('GET ' + request_path)
+                logger.info(response.status)
+                logger.info(latencies)
             except (HTTPError, URLError, socket.error, ssl.SSLError, ssl.CertificateError, BadStatusLine, HttpRetrievalError) as e:
+                logger.error(e)
                 latencies.append(3600.0)
             finally:
                 if conn:
                     conn.close()
                 conn = None
         return round((sum(latencies) / (times*2)) * 1000.0, 3)
+    
+    def download(self):
+        terminated = threading.Event()
+        requestq = multiprocessing.Queue()
+        resultq = multiprocessing.Queue()
+        for _ in range(2):
+            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+        
+        request_paths = []
+        for size in self.testsuite.config.p['sizes']['download']:
+            for _ in range(self.testsuite.config.p['counts']['download']):
+                request_paths.append('/random%sx%s.jpg' % (size, size, ))
+                
+        i = 0
+        for request_path in request_paths:
+            request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, i, )})),
+                method='GET',
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                    'Cache-Control': 'no-cache', })
+            logger.info(request.full_url)
+            requestq.put(request)
+            i += 1
+        
+        results = DownloadResults()
+        for _ in range(len(request_paths)):
+            results.append(resultq.get())
+        terminated.set()
+        return results
+        
+    def upload(self):
+        terminated = threading.Event()
+        requestq = multiprocessing.Queue()
+        resultq = multiprocessing.Queue()
+        for _ in range(2):
+            HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+        
+        sizes = []
+        for size in self.testsuite.config.p['sizes']['upload']:
+            for _ in range(0, self.testsuite.config.p['counts']['upload']):
+                sizes.append(size)
+
+        for size in sizes:
+            data = HTTPUploadData(size=size)
+            request = urllib.request.Request(self.url,
+                method='POST',
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                    'Cache-Control': 'no-cache',
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Length': size, },
+                data=data.data)
+            logger.info(request.full_url)
+            requestq.put(request)
+        
+        results = UploadResults()
+        for _ in range(len(sizes)):
+            results.append(resultq.get())
+        terminated.set()
+        return results
 
 class MiniServer(Server):
     def __init__(self, testsuite):
@@ -268,11 +450,34 @@ class MiniServer(Server):
     def latency(self):
         return 0.0
 
+class NullServer(Server):
+    def __init__(self, testsuite):
+        super().__init__(testsuite,
+            id=0,
+            name='Speedtest Mini Server',
+            url='http://sp5.atcc-gns.net:8080/speedtest/upload.php',
+            host='sp5.atcc-gns.net:8080',
+            country='Japan',
+            cc='JP',
+            sponsor='Speedtest Mini',
+            point=Point(0.0, 0.0))
+    
+    @property
+    def distance(self):
+        return 0.0
+        
+    @property
+    def latency(self):
+        return 0.0
+
 class Servers(object):
     def __init__(self, testsuite):
-        self.servers = []
         self.testsuite = testsuite
 
+    @property
+    @memoized
+    def servers(self):
+        servers = []
         http = HttpClient()
         urls = [
             'https://www.speedtest.net/speedtest-servers-static.php',
@@ -280,14 +485,23 @@ class Servers(object):
             'https://www.speedtest.net/speedtest-servers.php',
             'http://c.speedtest.net/speedtest-servers.php', ]
         for url in urls:
-            root = xml.dom.minidom.parseString(http.get(url, params={'threads': testsuite.config.p['threads']['download']}).decode('utf-8'))
-            for server in root.getElementsByTagName('server'):
-                self.servers.append(Server.fromElement(testsuite, server))
+            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.p['threads']['download']}).decode('utf-8'))
+            for element in root.getElementsByTagName('server'):
+                server = Server.fromElement(self.testsuite, element)
+                if server.id in self.testsuite.config.p['ignore_servers']:
+                    continue
+                servers.append(server)
+        return servers
                 
     def get_closest_servers(self, limit=5):
         def sort_by_distance(servers):
             return sorted(servers, key=lambda server: server.distance)
         return sort_by_distance(self.servers)[:limit]
+
+@dataclass
+class TestSuiteResults:
+    download: DownloadResults
+    upload: UploadResults
 
 class TestSuite(object):
     def __init__(self):
@@ -298,6 +512,7 @@ class TestSuite(object):
         return self.config.p['client']
         
     @property
+    @memoized
     def servers(self):
         return Servers(self)
     
@@ -305,13 +520,36 @@ class TestSuite(object):
         def sort_by_latency(servers):
             return sorted(servers, key=lambda server: server.latency)
         return sort_by_latency(self.servers.get_closest_servers())[0]
+    
+    def download(self):
+        return self.get_best_server().download()
+
+    def upload(self):
+        return self.get_best_server().upload()
+    
+    @property
+    @memoized
+    def results(self):
+        return TestSuiteResults(self.download(), self.upload())
 
 def main():
+    logger.setLevel(logging.DEBUG)
     #http = HttpClient()
     #print(http.get(str(URL('//tayhoon.sakura.ne.jp/_.php'))).decode('utf-8'))
     t = TestSuite()
-    print(t.servers.get_closest_servers())
+    s = NullServer(t)
+    #print(t.servers.get_closest_servers())
+    print('== Selected Server')
     print(t.get_best_server())
+    print(t.get_best_server().latency)
+    print('== Download Results')
+    for size, elapsed in t.results.download.histgram.items():
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(t.results.download.total_size), t.results.download.total_elapsed, units.Bandwidth(t.results.download.total_size*8.0 / t.results.download.total_elapsed)))
+    print('== Upload Results')
+    for size, elapsed in t.results.upload.histgram.items():
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(t.results.upload.total_size), t.results.upload.total_elapsed, units.Bandwidth(t.results.upload.total_size*8.0 / t.results.upload.total_elapsed)))
 
 if __name__ == '__main__':
     main()
