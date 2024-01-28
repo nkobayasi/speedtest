@@ -206,39 +206,45 @@ class HTTPUploadData(object):
         return self.size <= self.data.tell()
 
 class HTTPUploader(threading.Thread, HttpClient):
-    def __init__(self, resultq, request):
+    def __init__(self, resultq, requestq, terminated):
         super().__init__()
-        self.request = request
-        self.request.add_header('User-Agent', self.user_agent)
+        self.requestq = requestq
         self.resultq = resultq
+        self.terminated = terminated
 
     def run(self):
-        try:
-            start = time.time()
-            with urllib.request.urlopen(self.request) as f:
-                f.read()
-                finish = time.time()
-            self.resultq.put({'size': int(self.request.get_header('Content-length')), 'elapsed': finish - start, })
-        except Exception as e:
-            self.resultq.put({'size': 0, 'elapsed': -1, })
+        while not self.terminated.wait(timeout=0.1):
+            try:
+                request = self.requestq.get()
+                request.add_header('User-Agent', self.user_agent)
+                start = time.time()
+                with urllib.request.urlopen(request) as f:
+                    f.read()
+                    finish = time.time()
+                self.resultq.put({'size': int(request.get_header('Content-length')), 'elapsed': finish - start, })
+            except Exception as e:
+                self.resultq.put({'size': 0, 'elapsed': -1, })
 
 class HTTPDownloader(threading.Thread, HttpClient):
-    def __init__(self, resultq, request):
+    def __init__(self, resultq, requestq, terminated):
         super().__init__()
-        self.request = request
-        self.request.add_header('User-Agent', self.user_agent)
+        self.requestq = requestq
         self.resultq = resultq
+        self.terminated = terminated
         
     def run(self):
-        try:
-            start = time.time()
-            with urllib.request.urlopen(self.request) as f:
-                f.read()
-                finish = time.time()
-                size = int(f.headers['Content-Length'])
-            self.resultq.put({'size': size, 'elapsed': finish - start, })
-        except Exception:
-            self.resultq.put({'size': 0, 'elapsed': -1, })
+        while not self.terminated.wait(timeout=0.1):
+            try:
+                request = self.requestq.get()
+                request.add_header('User-Agent', self.user_agent)
+                start = time.time()
+                with urllib.request.urlopen(request) as f:
+                    f.read()
+                    finish = time.time()
+                    size = int(f.headers['Content-Length'])
+                self.resultq.put({'size': size, 'elapsed': finish - start, })
+            except Exception:
+                self.resultq.put({'size': 0, 'elapsed': -1, })
 
 class Server(object):
     def __init__(self, testsuite, id, name, url, host, country, cc, sponsor, point):
@@ -310,14 +316,18 @@ class Server(object):
         return round((sum(latencies) / (times*2)) * 1000.0, 3)
     
     def download(self):
+        terminated = threading.Event()
+        requestq = multiprocessing.Queue()
+        resultq = multiprocessing.Queue()
+        for _ in range(2):
+            thread = HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+        
         request_paths = []
         for size in self.testsuite.config.p['sizes']['download']:
             for _ in range(self.testsuite.config.p['counts']['download']):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
         i = 0
-        threads = []
-        resultq = multiprocessing.Queue()
         for request_path in request_paths:
             request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, i, )})),
                 method='GET',
@@ -325,24 +335,27 @@ class Server(object):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache', })
             print(request.full_url)
-            thread = HTTPDownloader(resultq=resultq, request=request)
-            thread.start()
-            threads.append(thread)
+            requestq.put(request)
             i += 1
         
         results = []
         for _ in range(len(request_paths)):
             results.append(resultq.get())
+        terminated.set()
         return results
         
     def upload(self):
+        terminated = threading.Event()
+        requestq = multiprocessing.Queue()
+        resultq = multiprocessing.Queue()
+        for _ in range(2):
+            HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+        
         sizes = []
         for size in self.testsuite.config.p['sizes']['upload']:
             for _ in range(0, self.testsuite.config.p['counts']['upload']):
                 sizes.append(size)
 
-        threads = []
-        resultq = multiprocessing.Queue()
         for size in sizes:
             data = HTTPUploadData(size=size)
             request = urllib.request.Request(self.url,
@@ -354,13 +367,12 @@ class Server(object):
                     'Content-Length': size, },
                 data=data.data)
             print(request.full_url)
-            thread = HTTPUploader(resultq=resultq, request=request)
-            thread.start()
-            threads.append(thread)
+            requestq.put(request)
         
         results = []
         for _ in range(len(sizes)):
             results.append(resultq.get())
+        terminated.set()
         return results
 
 class MiniServer(Server):
@@ -467,7 +479,7 @@ def main():
     size = 0
     elapsed = 0.0
     #for result in t.download():
-    for result in s.upload():
+    for result in s.download():
         size += result['size']
         elapsed += result['elapsed']
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(result['size']), result['elapsed'], units.Bandwidth(result['size']*8.0 / result['elapsed'])))
