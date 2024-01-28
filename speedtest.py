@@ -89,7 +89,7 @@ class HttpClient(object):
             headers={
                 'User-Agent': self.user_agent,
                 'Cache-Control': 'no-cache', })
-        print(request.full_url)
+        logger.info(request.full_url)
         with urllib.request.urlopen(request) as f:
             return f.read()
 
@@ -99,7 +99,7 @@ class HttpClient(object):
                 'User-Agent': self.user_agent, # Header "Content-Type: application/x-www-form-urlencoded" will be added as a default.
                 'Cache-Control': 'no-cache', },
             data=urllib.parse.urlencode(params).encode('ascii'))
-        print(request.full_url)
+        logger.info(request.full_url)
         with urllib.request.urlopen(request) as f:
             return f.read()
 
@@ -206,7 +206,7 @@ class Config(object):
                 'upload': int(e['upload'].getAttribute('testlength')),
                 'download': int(e['download'].getAttribute('testlength')), },
             'upload_max': upload_count * size_count, }
-        print(self.p)
+        logger.info(self.p)
 
 class HTTPUploadData(object):
     def __init__(self, size):
@@ -311,7 +311,6 @@ class Server(object):
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[scheme]
 
-        logger.info(self)
         times = 3
         latencies = []
         for _ in range(times):
@@ -328,8 +327,12 @@ class Server(object):
                 if not (response.status == 200 and response.read(9) == b'test=test'):
                     raise HttpRetrievalError()
                 latencies.append(latency)
-                print(request_url, 'GET', request_path, response.status, latencies)
+                logger.info(request_url)
+                logger.info('GET ' + request_path)
+                logger.info(response.status)
+                logger.info(latencies)
             except (HTTPError, URLError, socket.error, ssl.SSLError, ssl.CertificateError, BadStatusLine, HttpRetrievalError) as e:
+                logger.error(e)
                 latencies.append(3600.0)
             finally:
                 if conn:
@@ -491,6 +494,7 @@ class TestSuite(object):
         return self.get_best_server().upload()
 
 def main():
+    logger.setLevel(logging.DEBUG)
     #http = HttpClient()
     #print(http.get(str(URL('//tayhoon.sakura.ne.jp/_.php'))).decode('utf-8'))
     t = TestSuite()
@@ -501,7 +505,7 @@ def main():
     size = 0
     elapsed = 0.0
     #for result in t.download():
-    for result in s.download():
+    for result in t.download():
         size += result['size']
         elapsed += result['elapsed']
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(result['size']), result['elapsed'], units.Bandwidth(result['size']*8.0 / result['elapsed'])))
