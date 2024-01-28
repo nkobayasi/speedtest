@@ -208,6 +208,34 @@ class Config(object):
             'upload_max': upload_count * size_count, }
         logger.info(self.p)
 
+class Results(object):
+    def __init__(self):
+        self.results = []
+        self.histgrams = {}
+        self.total_size = 0
+        self.total_elapsed = 0.0
+        
+    def append(self, result):
+        if result['size'] not in self.histgrams:
+            self.histgrams[result['size']] = []
+        self.histgrams[result['size']].append(result['elapsed'])
+        self.total_size += result['size']
+        self.total_elapsed += result['elapsed']
+        self.results.append(result)
+        
+    @property
+    def histgram(self):
+        results = {}
+        for size, elapsed in self.histgrams.items():
+            results[size] = sum(elapsed) / len(elapsed)
+        return results
+
+class UploadResults(Results):
+    pass
+
+class DownloadResults(Results):
+    pass
+
 class HTTPUploadData(object):
     def __init__(self, size):
         chars = b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -363,7 +391,7 @@ class Server(object):
             requestq.put(request)
             i += 1
         
-        results = []
+        results = DownloadResults()
         for _ in range(len(request_paths)):
             results.append(resultq.get())
         terminated.set()
@@ -394,7 +422,7 @@ class Server(object):
             logger.info(request.full_url)
             requestq.put(request)
         
-        results = []
+        results = UploadResults()
         for _ in range(len(sizes)):
             results.append(resultq.get())
         terminated.set()
@@ -502,14 +530,18 @@ def main():
     #print(t.servers.get_closest_servers())
     #print(t.get_best_server())
     #print(t.get_best_server().latency)
-    size = 0
-    elapsed = 0.0
-    #for result in t.download():
-    for result in t.download():
-        size += result['size']
-        elapsed += result['elapsed']
-        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(result['size']), result['elapsed'], units.Bandwidth(result['size']*8.0 / result['elapsed'])))
-    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
+    print('== Downloading...')
+    dresults = t.download()
+    print('== Uploading...')
+    uresults = t.upload()
+    print('== Download Results')
+    for size, elapsed in dresults.histgram.items():
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(dresults.total_size), dresults.total_elapsed, units.Bandwidth(dresults.total_size*8.0 / dresults.total_elapsed)))
+    print('== Upload Results')
+    for size, elapsed in uresults.histgram.items():
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(uresults.total_size), uresults.total_elapsed, units.Bandwidth(uresults.total_size*8.0 / uresults.total_elapsed)))
 
 if __name__ == '__main__':
     main()
