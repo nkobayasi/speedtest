@@ -234,7 +234,9 @@ class Server(object):
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
                 start = time.perf_counter()
-                conn.request('GET', request_path, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'})
+                conn.request('GET', request_path, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                    'Cache-Control': 'no-cache', })
                 response = conn.getresponse()
                 latency = time.perf_counter() - start
                 if not (response.status == 200 and response.read(9) == b'test=test'):
