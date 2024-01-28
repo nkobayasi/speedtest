@@ -22,7 +22,6 @@ import logging
 import logging.handlers
 
 import units
-from Crypto.SelfTest.Signature.test_dss import res
 
 __version__ = '2.1.4b1'
 
@@ -259,7 +258,7 @@ class HTTPCancelableUploadData(HTTPUploadData):
     def read(self, size):
         result = b''
         chunksize = 10240
-        while True: #not self.terminated.is_set():
+        while True: # not self.terminated.is_set():
             data = super().read(size if size < chunksize else chunksize)
             result += data
             if len(data) < chunksize:
