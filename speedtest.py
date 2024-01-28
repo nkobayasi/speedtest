@@ -272,9 +272,12 @@ class MiniServer(Server):
 
 class Servers(object):
     def __init__(self, testsuite):
-        self.servers = []
         self.testsuite = testsuite
 
+    @property
+    @memoized
+    def servers(self):
+        results = []
         http = HttpClient()
         urls = [
             'https://www.speedtest.net/speedtest-servers-static.php',
@@ -282,12 +285,13 @@ class Servers(object):
             'https://www.speedtest.net/speedtest-servers.php',
             'http://c.speedtest.net/speedtest-servers.php', ]
         for url in urls:
-            root = xml.dom.minidom.parseString(http.get(url, params={'threads': testsuite.config.p['threads']['download']}).decode('utf-8'))
+            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.p['threads']['download']}).decode('utf-8'))
             for element in root.getElementsByTagName('server'):
-                server = Server.fromElement(testsuite, element)
+                server = Server.fromElement(self.testsuite, element)
                 if server.id in self.testsuite.config.p['ignore_servers']:
                     continue
-                self.servers.append(server)
+                results.append(server)
+        return results
                 
     def get_closest_servers(self, limit=5):
         def sort_by_distance(servers):
@@ -303,6 +307,7 @@ class TestSuite(object):
         return self.config.p['client']
         
     @property
+    @memoized
     def servers(self):
         return Servers(self)
     
@@ -317,6 +322,7 @@ def main():
     t = TestSuite()
     print(t.servers.get_closest_servers())
     print(t.get_best_server())
+    print(t.get_best_server().latency)
 
 if __name__ == '__main__':
     main()
