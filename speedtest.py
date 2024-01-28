@@ -281,8 +281,11 @@ class Servers(object):
             'http://c.speedtest.net/speedtest-servers.php', ]
         for url in urls:
             root = xml.dom.minidom.parseString(http.get(url, params={'threads': testsuite.config.p['threads']['download']}).decode('utf-8'))
-            for server in root.getElementsByTagName('server'):
-                self.servers.append(Server.fromElement(testsuite, server))
+            for element in root.getElementsByTagName('server'):
+                server = Server.fromElement(testsuite, element)
+                if server.id in self.testsuite.config.p['ignore_servers']:
+                    continue
+                self.servers.append(server)
                 
     def get_closest_servers(self, limit=5):
         def sort_by_distance(servers):
