@@ -7,11 +7,15 @@ import time
 import ipaddress
 import platform
 import ssl
+import threading
+import multiprocessing
 import http.client
 import urllib.request
 import urllib.parse
 import xml.dom
 import xml.dom.minidom
+
+import units
 
 __version__ = '2.1.4b1'
 
@@ -182,6 +186,23 @@ class Config(object):
             'upload_max': upload_count * size_count, }
         print(self.p)
 
+class HTTPDownloader(threading.Thread):
+    def __init__(self, resultq, request):
+        super().__init__()
+        self.request = request
+        self.resultq = resultq
+        
+    def run(self):
+        try:
+            start = time.time()
+            with urllib.request.urlopen(self.request) as f:
+                f.read()
+                finish = time.time()
+                size = int(f.headers['Content-Length'])
+            self.resultq.put({'size': size, 'elapsed': finish - start, })
+        except Exception:
+            self.resultq.put({'size': 0, 'elapsed': -1, })
+
 class Server(object):
     def __init__(self, testsuite, id, name, url, host, country, cc, sponsor, point):
         self.testsuite = testsuite
@@ -252,7 +273,33 @@ class Server(object):
         return round((sum(latencies) / (times*2)) * 1000.0, 3)
     
     def download(self):
-        urls = []
+        request_paths = []
+        for size in self.testsuite.config.p['sizes']['download']:
+            for _ in range(self.testsuite.config.p['counts']['download']):
+                request_paths.append('/random%sx%s.jpg' % (size, size, ))
+                
+        i = 0
+        threads = []
+        resultq = multiprocessing.Queue()
+        for request_path in request_paths:
+            request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, i, )})),
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                    'Cache-Control': 'no-cache', })
+            print(request.full_url)
+            thread = HTTPDownloader(resultq=resultq, request=request)
+            thread.start()
+            threads.append(thread)
+            i += 1
+            
+        #for thread in threads:
+        #    thread.join()
+        
+        results = []
+        for _ in range(len(request_paths)):
+            results.append(resultq.get())
+        return results
+        
 
 class MiniServer(Server):
     def __init__(self, testsuite):
@@ -264,6 +311,26 @@ class MiniServer(Server):
             host=server.host,
             country=server.country,
             cc=server.cc,
+            sponsor='Speedtest Mini',
+            point=Point(0.0, 0.0))
+    
+    @property
+    def distance(self):
+        return 0.0
+        
+    @property
+    def latency(self):
+        return 0.0
+
+class NullServer(Server):
+    def __init__(self, testsuite):
+        super().__init__(testsuite,
+            id=0,
+            name='Speedtest Mini Server',
+            url='http://sp5.atcc-gns.net:8080/speedtest/upload.php',
+            host='sp5.atcc-gns.net:8080',
+            country='Japan',
+            cc='JP',
             sponsor='Speedtest Mini',
             point=Point(0.0, 0.0))
     
@@ -328,9 +395,13 @@ def main():
     #http = HttpClient()
     #print(http.get(str(URL('//tayhoon.sakura.ne.jp/_.php'))).decode('utf-8'))
     t = TestSuite()
-    print(t.servers.get_closest_servers())
-    print(t.get_best_server())
-    print(t.get_best_server().latency)
+    #s = NullServer(t)
+    #print(t.servers.get_closest_servers())
+    #print(t.get_best_server())
+    #print(t.get_best_server().latency)
+    for result in t.download():
+    #for result in s.download():
+        print('{!s}B => {!s}bps'.format(units.VolumeSize(result['size']), units.Bandwidth(result['size']*8.0 / result['elapsed'])))
 
 if __name__ == '__main__':
     main()
