@@ -10,6 +10,7 @@ import time
 import ipaddress
 import platform
 import ssl
+import queue
 import threading
 import multiprocessing
 import http.client
@@ -269,13 +270,15 @@ class HTTPUploader(threading.Thread, HttpClient):
     def run(self):
         while not self.terminated.wait(timeout=0.1):
             try:
-                request = self.requestq.get()
+                request = self.requestq.get(timeout=0.1)
                 request.add_header('User-Agent', self.user_agent)
                 start = time.time()
                 with urllib.request.urlopen(request) as f:
                     f.read()
                     finish = time.time()
                 self.resultq.put({'size': int(request.get_header('Content-length')), 'elapsed': finish - start, })
+            except queue.Empty:
+                pass
             except Exception as e:
                 logger.error(e)
                 self.resultq.put({'size': 0, 'elapsed': -1, })
@@ -290,7 +293,7 @@ class HTTPDownloader(threading.Thread, HttpClient):
     def run(self):
         while not self.terminated.wait(timeout=0.1):
             try:
-                request = self.requestq.get()
+                request = self.requestq.get(timeout=0.1)
                 request.add_header('User-Agent', self.user_agent)
                 start = time.time()
                 with urllib.request.urlopen(request) as f:
@@ -298,6 +301,34 @@ class HTTPDownloader(threading.Thread, HttpClient):
                     finish = time.time()
                     size = int(f.headers['Content-Length'])
                 self.resultq.put({'size': size, 'elapsed': finish - start, })
+            except queue.Empty:
+                pass
+            except Exception as e:
+                logger.error(e)
+                self.resultq.put({'size': 0, 'elapsed': -1, })
+
+class HTTPCancelableDownloader(HTTPDownloader):
+    def run(self):
+        while not self.terminated.wait(timeout=0.1):
+            try:
+                total = 0
+                chunksize = 10240
+                request = self.requestq.get(timeout=0.1)
+                request.add_header('User-Agent', self.user_agent)
+                start = time.time()
+                with urllib.request.urlopen(request) as f:
+                    while not self.terminated.is_set():
+                        data = f.read(chunksize)
+                        total += len(data)
+                        if len(data) < chunksize:
+                            break
+                    finish = time.time()
+                    size = int(f.headers['Content-Length'])
+                if total < size:
+                    raise Exception()
+                self.resultq.put({'size': size, 'elapsed': finish - start, })
+            except queue.Empty:
+                pass
             except Exception as e:
                 logger.error(e)
                 self.resultq.put({'size': 0, 'elapsed': -1, })
