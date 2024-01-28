@@ -22,6 +22,7 @@ import logging
 import logging.handlers
 
 import units
+from Crypto.SelfTest.Signature.test_dss import res
 
 __version__ = '2.1.4b1'
 
@@ -240,25 +241,31 @@ class UploadResults(Results):
 class DownloadResults(Results):
     pass
 
-class HTTPUploadData(object):
+class HTTPUploadData(io.BytesIO):
     def __init__(self, size):
+        super().__init__()
         chars = b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        self.size = int(size)
-        self.data = io.BytesIO()
-        self.data.write(b'content1=')
+        self.write(b'content1=')
         for _ in range(int(round(float(size) / len(chars))) + 1):
-            self.data.write(chars)
-        self.data.truncate(size)
-        self.data.seek(0, os.SEEK_SET)
+            self.write(chars)
+        self.truncate(size)
+        self.seek(0, os.SEEK_SET)
 
-    def __len__(self):
-        return self.size
-            
-    def read(self, size=10240):
-        return self.data.read(size)
-    
-    def eof(self):
-        return self.size <= self.data.tell()
+class HTTPCancelableUploadData(HTTPUploadData):
+    def __init__(self, size, terminated):
+        super().__init__(size)
+        #self.terminated = terminated
+        
+    def read(self, size):
+        result = b''
+        chunksize = 10240
+        while True: #not self.terminated.is_set():
+            data = super().read(size if size < chunksize else chunksize)
+            result += data
+            if len(data) < chunksize:
+                break
+            size -= len(data)
+        return result
 
 class HTTPUploader(threading.Thread, HttpClient):
     def __init__(self, resultq, requestq, terminated):
@@ -409,7 +416,7 @@ class Server(object):
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
         for _ in range(2):
-            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+            HTTPCancelableDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
         
         request_paths = []
         for size in self.testsuite.config.p['sizes']['download']:
@@ -446,7 +453,7 @@ class Server(object):
                 sizes.append(size)
 
         for size in sizes:
-            data = HTTPUploadData(size=size)
+            data = HTTPCancelableUploadData(size=size, terminated=terminated)
             request = urllib.request.Request(self.url,
                 method='POST',
                 headers={
@@ -454,7 +461,7 @@ class Server(object):
                     'Cache-Control': 'no-cache',
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'Content-Length': size, },
-                data=data.data)
+                data=data)
             logger.info(request.full_url)
             requestq.put(request)
         
