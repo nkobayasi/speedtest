@@ -520,11 +520,16 @@ class TestSuite(object):
             return sorted(servers, key=lambda server: server.latency)
         return sort_by_latency(self.servers.get_closest_servers())[0]
     
+    @property
+    @memoized
+    def best_server(self):
+        return self.get_best_server()
+
     def download(self):
-        return self.get_best_server().download()
+        return self.best_server.download()
 
     def upload(self):
-        return self.get_best_server().upload()
+        return self.best_server.upload()
     
     @property
     @memoized
@@ -539,8 +544,9 @@ def main():
     s = NullServer(t)
     #print(t.servers.get_closest_servers())
     print('== Selected Server')
-    print(t.get_best_server())
-    print(t.get_best_server().latency)
+    print(t.best_server)
+    print('{}km'.format(t.best_server.distance))
+    print('{}pt'.format(t.best_server.latency))
     print('== Download Results')
     for size, elapsed in t.results.download.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
