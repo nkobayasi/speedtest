@@ -217,6 +217,8 @@ class Results(object):
         self.total_elapsed = 0.0
         
     def append(self, result):
+        if result['elapsed'] < 0:
+            return
         if result['size'] not in self.histgrams:
             self.histgrams[result['size']] = []
         self.histgrams[result['size']].append(result['elapsed'])
