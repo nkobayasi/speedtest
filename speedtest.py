@@ -58,7 +58,7 @@ class HttpClient(object):
         #return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
     
     def get(self, url, params={}):
-        params.update({'x': '%s.0' % int(time.time() * 1000)})
+        params.update({'x': '%.0f.0' % (time.time() * 1000.0, )})
         request = urllib.request.Request(url + '?' + urllib.parse.urlencode(params),
             headers={
                 'User-Agent': self.user_agent,
@@ -68,7 +68,7 @@ class HttpClient(object):
             return f.read()
 
     def post(self, url, params={}):
-        request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%s.0' % int(time.time() * 1000)}),
+        request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%.0f.0' % (time.time() * 1000.0, )}),
             headers={
                 'User-Agent': self.user_agent, # Header "Content-Type: application/x-www-form-urlencoded" will be added as a default.
                 'Cache-Control': 'no-cache', },
@@ -116,7 +116,7 @@ class ISP(object):
         return self
 
     def __repr__(self):
-        return '<ISP: name="{}",rating={:.1f},avg_down={:.1f},avg_up={:.1f}>'.format(self.name, self.rating, self.avg_down, self.avg_up)
+        return '<ISP: name="{}",rating={:.1f},avg=(down={:.1f},up={:.1f})>'.format(self.name, self.rating, self.avg_down, self.avg_up)
 
 class Client(object):
     def __init__(self, ipaddr, cc, point, rating, isp):
@@ -225,11 +225,11 @@ class Server(object):
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[scheme]
 
-        url = urllib.parse.urlparse(self.url, allow_fragments=False)
+        print(self)
         times = 3
         latencies = []
         for _ in range(times):
-            request_url = urllib.parse.urlparse('%s://%s/latency.txt?%s' % (url.scheme, url.netloc, urllib.parse.urlencode({'x': '%s.%s' % (int(time.time() * 1000), _, )}), ), allow_fragments=False)
+            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%s' % (time.time() * 1000, _, )}), )), allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
@@ -250,6 +250,9 @@ class Server(object):
                     conn.close()
                 conn = None
         return round((sum(latencies) / (times*2)) * 1000.0, 3)
+    
+    def download(self):
+        urls = []
 
 class MiniServer(Server):
     def __init__(self, testsuite):
@@ -317,6 +320,9 @@ class TestSuite(object):
         def sort_by_latency(servers):
             return sorted(servers, key=lambda server: server.latency)
         return sort_by_latency(self.servers.get_closest_servers())[0]
+    
+    def download(self):
+        return self.get_best_server().download()
 
 def main():
     #http = HttpClient()
