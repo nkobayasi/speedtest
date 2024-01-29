@@ -86,22 +86,22 @@ class HttpClient(object):
         #return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
     
     def get(self, url, params={}):
-        params.update({'x': '%.0f.0' % (time.time() * 1000.0, )})
+        params.update({'x': '%.1f' % (time.time() * 1000.0, )})
         request = urllib.request.Request(url + '?' + urllib.parse.urlencode(params),
             headers={
                 'User-Agent': self.user_agent,
                 'Cache-Control': 'no-cache', })
-        logger.info(request.full_url)
+        logger.debug(request.full_url)
         with urllib.request.urlopen(request) as f:
             return f.read()
 
     def post(self, url, params={}):
-        request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%.0f.0' % (time.time() * 1000.0, )}),
+        request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%.1f' % (time.time() * 1000.0, )}),
             headers={
                 'User-Agent': self.user_agent, # Header "Content-Type: application/x-www-form-urlencoded" will be added as a default.
                 'Cache-Control': 'no-cache', },
             data=urllib.parse.urlencode(params).encode('ascii'))
-        logger.info(request.full_url)
+        logger.debug(request.full_url)
         with urllib.request.urlopen(request) as f:
             return f.read()
 
@@ -169,7 +169,7 @@ class Client(object):
         return self
         
     def __repr__(self):
-        return '<Client: ipaddr={!s},cc="{}",point={!s},rating={:.1f},isp={!s}>'.format(self.ipaddr, self.cc, self.point, self.rating, self.isp)
+        return '<Client: ipaddr={!s},cc="{}",point={!s},rating={:.1f},isp={!r}>'.format(self.ipaddr, self.cc, self.point, self.rating, self.isp)
 
 class Config(object):
     def __init__(self):
@@ -208,7 +208,7 @@ class Config(object):
                 'upload': int(e['upload'].getAttribute('testlength')),
                 'download': int(e['download'].getAttribute('testlength')), },
             'upload_max': upload_count * size_count, }
-        logger.info(self.p)
+        logger.debug('{!r}'.format(self.p))
 
 class Results(object):
     def __init__(self):
@@ -363,7 +363,7 @@ class Server(object):
             cc=element.getAttribute('cc'),
             sponsor=element.getAttribute('sponsor'),
             point=Point(latitude=element.getAttribute('lat'), longitude=element.getAttribute('lon')))
-        logger.info(self)
+        logger.debug('{!r}'.format(self))
         return self
         
     def __repr__(self):
@@ -384,7 +384,7 @@ class Server(object):
 
         latencies = []
         for _ in range(3):
-            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000, _, )}), )), allow_fragments=False)
+            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, _, )}), )), allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
@@ -397,10 +397,7 @@ class Server(object):
                 if not (response.status == 200 and response.read(9) == b'test=test'):
                     raise HttpRetrievalError()
                 latencies.append(latency)
-                logger.info(request_url)
-                logger.info('GET ' + request_path)
-                logger.info(response.status)
-                logger.info(latencies)
+                logger.debug('{!s} GET {} => {} {!s}'.format(request_url, request_path, response.status, latencies))
             except (HTTPError, URLError, socket.error, ssl.SSLError, ssl.CertificateError, BadStatusLine, HttpRetrievalError) as e:
                 logger.error(e)
                 latencies.append(3600.0)
@@ -429,7 +426,7 @@ class Server(object):
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache', })
-            logger.info(request.full_url)
+            logger.debug(request.full_url)
             requestq.put(request)
             i += 1
         
@@ -461,7 +458,7 @@ class Server(object):
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'Content-Length': size, },
                 data=data)
-            logger.info(request.full_url)
+            logger.debug(request.full_url)
             requestq.put(request)
         
         results = UploadResults()
