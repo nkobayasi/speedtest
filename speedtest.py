@@ -439,7 +439,7 @@ class Server(object):
         
         sizes = []
         for size in self.testsuite.config.p['sizes']['upload']:
-            for _ in range(0, self.testsuite.config.p['counts']['upload']):
+            for _ in range(self.testsuite.config.p['counts']['upload']):
                 sizes.append(size)
 
         for size in sizes:
