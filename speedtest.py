@@ -249,6 +249,11 @@ class HTTPUploadData(io.BytesIO):
             self.write(chars)
         self.truncate(size)
         self.seek(0, os.SEEK_SET)
+        self._size = size
+        
+    @property
+    def size(self):
+        return self._size
 
 class HTTPCancelableUploadData(HTTPUploadData):
     def __init__(self, size, terminated):
