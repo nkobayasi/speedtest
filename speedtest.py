@@ -175,40 +175,66 @@ class Config(object):
     def __init__(self):
         http = HttpClient()
         root = xml.dom.minidom.parseString(http.get('https://www.speedtest.net/speedtest-config.php').decode('utf-8'))
+        settings = {
+            'licensekey': root.getElementsByTagName('licensekey')[0].firstChild.data,
+            'customer': root.getElementsByTagName('customer')[0].firstChild.data}
+        with root.getElementsByTagName('server-config')[0] as e:
+            settings['server-config'] = {
+                'threadcount': int(e.getAttribute('threadcount')),
+                'ignoreids': e.getAttribute('ignoreids'),
+                'notonmap': e.getAttribute('notonmap'),
+                'forcepingid': e.getAttribute('forcepingid'),
+                'preferredserverid': e.getAttribute('preferredserverid')}
+        with root.getElementsByTagName('download')[0] as e:
+            settings['download'] = {
+                'testlength': int(e.getAttribute('testlength')),
+                'initialtest': units.Size(e.getAttribute('initialtest')),
+                'mintestsize': units.Size(e.getAttribute('mintestsize')),
+                'threadsperurl': int(e.getAttribute('threadsperurl'))}
+        with root.getElementsByTagName('upload')[0] as e:
+            settings['upload'] = {
+                'testlength': int(e.getAttribute('testlength')),
+                'ratio': int(e.getAttribute('ratio')),
+                'initialtest': units.Size(e.getAttribute('initialtest')),
+                'mintestsize': units.Size(e.getAttribute('mintestsize')),
+                'threads': int(e.getAttribute('threads')),
+                'maxchunksize': units.Size(e.getAttribute('maxchunksize')),
+                'maxchunkcount': int(e.getAttribute('maxchunkcount')),
+                'threadsperurl': int(e.getAttribute('threadsperurl'))}
+        with root.getElementsByTagName('latency')[0] as e:
+            settings['latency'] = {
+                'testlength': int(e.getAttribute('testlength')),
+                'waittime': int(e.getAttribute('waittime')),
+                'timeout': int(e.getAttribute('timeout'))}
+        with root.getElementsByTagName('times')[0] as e:
+            settings['times'] = {
+                'dl': [int(e.getAttribute('dl1')), int(e.getAttribute('dl2')), int(e.getAttribute('dl3'))],
+                'ul': [int(e.getAttribute('ul1')), int(e.getAttribute('ul2')), int(e.getAttribute('ul3'))]}
+        logger.debug('{!s}'.format(settings))
 
-        e = {
-            'server-config': root.getElementsByTagName('server-config')[0],
-            'download': root.getElementsByTagName('download')[0],
-            'upload': root.getElementsByTagName('upload')[0], }
-        
-        #print(e['server-config'].attributes['ignoreids'].value)
+        self.client = Client.fromElement(root.getElementsByTagName('client')[0])
+        logger.debug('{!r}'.format(self.client))
 
-        ratio = int(e['upload'].getAttribute('ratio'))
-        upload_max = int(e['upload'].getAttribute('maxchunkcount'))
-        
-        up_sizes = [32768, 65536, 131072, 262144, 524288, 1048576, 7340032]
-        
-        sizes = {
-            'upload': up_sizes[ratio-1:],
-            'download': [350, 500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000], }
-        size_count = len(sizes['upload'])
-        upload_count = int(math.ceil(upload_max / size_count))
-        
-        self.p = {
-            'client': Client.fromElement(root.getElementsByTagName('client')[0]),
-            'ignore_servers': list(filter(lambda _: int(_), filter(None, e['server-config'].getAttribute('ignoreids').split(',')))),
-            'sizes': sizes,
-            'counts': {
-                'upload': upload_count,
-                'download': int(e['download'].getAttribute('threadsperurl')), },
-            'threads': {
-                'upload': int(e['upload'].getAttribute('threads')),
-                'download': int(e['server-config'].getAttribute('threadcount')) * 2, },
-            'length': {
-                'upload': int(e['upload'].getAttribute('testlength')),
-                'download': int(e['download'].getAttribute('testlength')), },
-            'upload_max': upload_count * size_count, }
-        logger.debug('{!r}'.format(self.p))
+        upload_ratio = settings['upload']['ratio']
+        upload_max = settings['upload']['maxchunkcount']
+        upload_sizes = [32768, 65536, 131072, 262144, 524288, 1048576, 7340032][upload_ratio-1:]
+        upload_sizes_count = len(upload_sizes)
+        upload_count = int(math.ceil(upload_max / upload_sizes_count))
+
+        self.params = {
+            'ignore_servers': list(filter(lambda _: int(_), filter(None, settings['server-config']['ignoreids'].split(',')))),
+            'upload': {
+                'sizes': upload_sizes,
+                'counts': upload_count,
+                'threads': settings['upload']['threads'],
+                'length': settings['upload']['testlength']},
+            'download': {
+                'sizes': [350, 500, 750, 1000, 1500, 2000, 2500, 3000, 3500, 4000],
+                'counts': settings['download']['threadsperurl'],
+                'threads': settings['server-config']['threadcount'] * 2,
+                'length': settings['download']['testlength']},
+            'upload_max': upload_count * upload_sizes_count}
+        logger.debug('{!r}'.format(self.params))
 
 class Results(object):
     def __init__(self):
@@ -415,8 +441,8 @@ class Server(object):
             HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
         
         request_paths = []
-        for size in self.testsuite.config.p['sizes']['download']:
-            for _ in range(self.testsuite.config.p['counts']['download']):
+        for size in self.testsuite.config.params['download']['sizes']:
+            for _ in range(self.testsuite.config.params['download']['counts']):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
         i = 0
@@ -444,8 +470,8 @@ class Server(object):
             HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated).start()
         
         sizes = []
-        for size in self.testsuite.config.p['sizes']['upload']:
-            for _ in range(self.testsuite.config.p['counts']['upload']):
+        for size in self.testsuite.config.params['upload']['sizes']:
+            for _ in range(self.testsuite.config.params['upload']['counts']):
                 sizes.append(size)
 
         for size in sizes:
@@ -523,10 +549,10 @@ class Servers(object):
             'https://www.speedtest.net/speedtest-servers.php',
             'http://c.speedtest.net/speedtest-servers.php', ]
         for url in urls:
-            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.p['threads']['download']}).decode('utf-8'))
+            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}).decode('utf-8'))
             for element in root.getElementsByTagName('server'):
                 server = Server.fromElement(self.testsuite, element)
-                if server.id in self.testsuite.config.p['ignore_servers']:
+                if server.id in self.testsuite.config.params['ignore_servers']:
                     continue
                 servers.append(server)
         return servers
@@ -547,7 +573,7 @@ class TestSuite(object):
         
     @property
     def client(self):
-        return self.config.p['client']
+        return self.config.client
         
     @property
     @memoized
