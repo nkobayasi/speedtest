@@ -240,25 +240,31 @@ class UploadResults(Results):
 class DownloadResults(Results):
     pass
 
-class HTTPUploadData(object):
+class HTTPUploadData(io.BytesIO):
     def __init__(self, size):
+        super().__init__()
         chars = b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        self.size = int(size)
-        self.data = io.BytesIO()
-        self.data.write(b'content1=')
+        self.write(b'content1=')
         for _ in range(int(round(float(size) / len(chars))) + 1):
-            self.data.write(chars)
-        self.data.truncate(size)
-        self.data.seek(0, os.SEEK_SET)
+            self.write(chars)
+        self.truncate(size)
+        self.seek(0, os.SEEK_SET)
 
-    def __len__(self):
-        return self.size
-            
-    def read(self, size=10240):
-        return self.data.read(size)
-    
-    def eof(self):
-        return self.size <= self.data.tell()
+class HTTPCancelableUploadData(HTTPUploadData):
+    def __init__(self, size, terminated):
+        super().__init__(size)
+        #self.terminated = terminated
+        
+    def read(self, size):
+        result = b''
+        chunksize = 8*1024
+        while True: # not self.terminated.is_set():
+            data = super().read(size if size < chunksize else chunksize)
+            result += data
+            if len(data) < chunksize:
+                break
+            size -= len(data)
+        return result
 
 class HTTPUploader(threading.Thread, HttpClient):
     def __init__(self, resultq, requestq, terminated):
@@ -312,7 +318,7 @@ class HTTPCancelableDownloader(HTTPDownloader):
         while not self.terminated.wait(timeout=0.1):
             try:
                 total = 0
-                chunksize = 10240
+                chunksize = 8*1024
                 request = self.requestq.get(timeout=0.1)
                 request.add_header('User-Agent', self.user_agent)
                 start = time.time()
@@ -451,7 +457,7 @@ class Server(object):
                     'Cache-Control': 'no-cache',
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'Content-Length': size, },
-                data=data.data)
+                data=data)
             logger.debug(request.full_url)
             requestq.put(request)
         
