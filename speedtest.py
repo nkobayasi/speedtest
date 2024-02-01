@@ -623,6 +623,14 @@ class TestSuiteResults:
     def timestamp(self):
         return '%sZ' % self._timestamp.isoformat()
     
+    @property
+    def server(self):
+        return self.testsuite.server
+    
+    @property
+    def client(self):
+        return self.testsuite.client
+    
     def post(self):
         client = HttpClient()
         #response = client.post('https://www.speedtest.net/api/api.php',
@@ -630,21 +638,21 @@ class TestSuiteResults:
             headers={
                 'Referer': 'http://c.speedtest.net/flash/speedtest.swf'},
             params={
-                'recommendedserverid': self.testsuite.server.id,
-                'ping': int(round(self.testsuite.server.latency, 0)),
+                'recommendedserverid': self.server.id,
+                'ping': int(round(self.server.latency, 0)),
                 'screenresolution': '',
                 'promo': '',
                 'download': int(round(self.download.speed / 1000.0, 0)),
                 'screendpi': '',
                 'upload': int(round(self.upload.speed / 1000.0, 0)),
                 'testmethod': 'http',
-                'hash': hashlib.md5(('%.0f-%.0f-%.0f-%s' % (round(self.testsuite.server.latency, 0), round(self.upload.speed / 1000.0), round(self.download.speed / 1000.0), '297aae72', )).encode('utf-8')).hexdigest(),
+                'hash': hashlib.md5(('%.0f-%.0f-%.0f-%s' % (round(self.server.latency, 0), round(self.upload.speed / 1000.0), round(self.download.speed / 1000.0), '297aae72', )).encode('utf-8')).hexdigest(),
                 'touchscreen': 'none',
                 'startmode': 'pingselect',
                 'accuracy': 1,
                 'bytesreceived': self.download.total_size,
                 'bytessent': self.upload.total_size,
-                'serverid': self.testsuite.server.id,
+                'serverid': self.server.id,
                     }).decode('utf-8')
         params = urllib.parse.parse_qs(response)
         logger.debug('{} {}'.format(response, params))
@@ -666,16 +674,16 @@ class TestSuiteResults:
         f.writeheader()
         if not headeronly:
             f.writerow({
-                'Server ID': self.testsuite.server.id,
-                'Sponsor': self.testsuite.server.sponsor,
-                'Server Name': self.testsuite.server.name,
+                'Server ID': self.server.id,
+                'Sponsor': self.server.sponsor,
+                'Server Name': self.server.name,
                 'Timestamp': self.timestamp,
-                'Distance': self.testsuite.server.distance,
-                'Ping': self.testsuite.server.latency,
+                'Distance': self.server.distance,
+                'Ping': self.server.latency,
                 'Download': self.download.speed,
                 'Upload': self.upload.speed,
                 'Share': '', # self.speedtestnet.image
-                'IP Address': self.testsuite.client.ipaddr
+                'IP Address': self.client.ipaddr
                     })
         return buff.getvalue()
     
@@ -683,33 +691,33 @@ class TestSuiteResults:
         return json.dumps({
             'download': self.download.speed,
             'upload': self.upload.speed,
-            'ping': self.testsuite.server.latency,
+            'ping': self.server.latency,
             'server': {
-                'id': self.testsuite.server.id,
-                'name': self.testsuite.server.name,
-                'sponsor': self.testsuite.server.sponsor,
-                'url': self.testsuite.server.url,
-                'host': self.testsuite.server.host,
-                'country': self.testsuite.server.country,
-                'cc': self.testsuite.server.cc,
+                'id': self.server.id,
+                'name': self.server.name,
+                'sponsor': self.server.sponsor,
+                'url': self.server.url,
+                'host': self.server.host,
+                'country': self.server.country,
+                'cc': self.server.cc,
                 'location': {
-                    'lat': self.testsuite.server.point.latitude,
-                    'lot': self.testsuite.server.point.longitude}},
+                    'lat': self.server.point.latitude,
+                    'lot': self.server.point.longitude}},
             'timestamp': self.timestamp,
             'bytes_sent': self.upload.total_size,
             'bytes_received': self.download.total_size,
             'share': '', # self.speedtestnet.image
             'client': {
-                'ipaddr': self.testsuite.client.ipaddr,
-                'rating': self.testsuite.client.rating,
-                'cc': self.testsuite.client.cc,
+                'ipaddr': self.client.ipaddr,
+                'rating': self.client.rating,
+                'cc': self.client.cc,
                 'location': {
-                    'lat': self.testsuite.client.point.latitude,
-                    'lon': self.testsuite.client.point.longitude},
+                    'lat': self.client.point.latitude,
+                    'lon': self.client.point.longitude},
                 'isp': {
-                    'name': self.testsuite.client.isp.name,
-                    'rating': self.testsuite.client.isp.rating,
-                    'average': {'down': self.testsuite.client.isp.avg_down, 'up': self.testsuite.client.isp.avg_up}}}}, indent=4)
+                    'name': self.client.isp.name,
+                    'rating': self.client.isp.rating,
+                    'average': {'down': self.client.isp.avg_down, 'up': self.client.isp.avg_up}}}}, indent=4)
 
 class TestSuite(object):
     def __init__(self):
