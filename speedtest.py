@@ -257,7 +257,7 @@ class HTTPCancelableUploadData(HTTPUploadData):
         
     def read(self, size):
         result = b''
-        chunksize = 10240
+        chunksize = 8*1024
         while True: # not self.terminated.is_set():
             data = super().read(size if size < chunksize else chunksize)
             result += data
@@ -318,7 +318,7 @@ class HTTPCancelableDownloader(HTTPDownloader):
         while not self.terminated.wait(timeout=0.1):
             try:
                 total = 0
-                chunksize = 10240
+                chunksize = 8*1024
                 request = self.requestq.get(timeout=0.1)
                 request.add_header('User-Agent', self.user_agent)
                 start = time.time()
@@ -412,7 +412,7 @@ class Server(object):
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
         for _ in range(2):
-            HTTPCancelableDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
         
         request_paths = []
         for size in self.testsuite.config.p['sizes']['download']:
@@ -449,7 +449,7 @@ class Server(object):
                 sizes.append(size)
 
         for size in sizes:
-            data = HTTPCancelableUploadData(size=size, terminated=terminated)
+            data = HTTPUploadData(size=size, terminated=terminated)
             request = urllib.request.Request(self.url,
                 method='POST',
                 headers={
