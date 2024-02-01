@@ -449,7 +449,7 @@ class Server(object):
                 sizes.append(size)
 
         for size in sizes:
-            data = HTTPUploadData(size=size, terminated=terminated)
+            data = HTTPUploadData(size=size)
             request = urllib.request.Request(self.url,
                 method='POST',
                 headers={
