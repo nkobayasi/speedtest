@@ -289,6 +289,33 @@ class UploadResults(Results):
 class DownloadResults(Results):
     pass
 
+class SpeedtestNetResult(object):
+    def __init__(self, id, hash, rating, timestamp):
+        self.id = id
+        self.hash = hash
+        self.rating = float(rating)
+        self._timestamp = timestamp
+        
+    def __repr__(self):
+        return '<SpeedtestNetResult: id={},hash={},rating={},timestamp="{}">'.format(self.id, self.hash, self.rating, self.timestamp)
+        
+    @classmethod
+    def factory(cls, params):
+        self = cls(
+            id=params['id'],
+            hash=params['hash'],
+            rating=params['rating'],
+            timestamp=datetime.datetime.strptime(params['timestamp'], '%m/%d/%Y %I:%M %p'))
+        return self
+    
+    @property
+    def timestamp(self):
+        return '%sZ' % self._timestamp.isoformat()
+    
+    @property
+    def image(self):
+        return 'http://www.speedtest.net/result/%s.png' % (self.id, )
+
 class HTTPUploadData(io.BytesIO):
     def __init__(self, size):
         super().__init__()
@@ -584,33 +611,6 @@ class Servers(object):
         def sort_by_distance(servers):
             return sorted(servers, key=lambda server: server.distance)
         return sort_by_distance(self.servers)[:limit]
-
-class SpeedtestNetResult(object):
-    def __init__(self, id, hash, rating, timestamp):
-        self.id = id
-        self.hash = hash
-        self.rating = float(rating)
-        self._timestamp = timestamp
-        
-    def __repr__(self):
-        return '<SpeedtestNetResult: id={},hash={},rating={},timestamp="{}">'.format(self.id, self.hash, self.rating, self.timestamp)
-        
-    @classmethod
-    def factory(cls, params):
-        self = cls(
-            id=params['id'],
-            hash=params['hash'],
-            rating=params['rating'],
-            timestamp=datetime.datetime.strptime(params['timestamp'], '%m/%d/%Y %I:%M %p'))
-        return self
-    
-    @property
-    def timestamp(self):
-        return '%sZ' % self._timestamp.isoformat()
-    
-    @property
-    def image(self):
-        return 'http://www.speedtest.net/result/%s.png' % (self.id, )
 
 class TestSuiteResults:
     def __init__(self, testsuite, download, upload):
