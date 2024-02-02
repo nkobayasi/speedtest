@@ -316,6 +316,113 @@ class SpeedtestNetResult(object):
     def image(self):
         return 'http://www.speedtest.net/result/%s.png' % (self.id, )
 
+class TestSuiteResults:
+    def __init__(self, testsuite, download, upload):
+        self.testsuite = testsuite
+        self.download = download
+        self.upload = upload
+        self._timestamp = datetime.datetime.utcnow()
+
+    @property
+    def timestamp(self):
+        return '%sZ' % self._timestamp.isoformat()
+    
+    @property
+    def server(self):
+        return self.testsuite.server
+    
+    @property
+    def client(self):
+        return self.testsuite.client
+    
+    def post(self):
+        client = HttpClient()
+        #response = client.post('https://www.speedtest.net/api/api.php',
+        response = client.post('https://tayhoon.sakura.ne.jp/speedtest/api/api.php',
+            headers={
+                'Referer': 'http://c.speedtest.net/flash/speedtest.swf'},
+            params={
+                'recommendedserverid': self.server.id,
+                'ping': int(round(self.server.latency, 0)),
+                'screenresolution': '',
+                'promo': '',
+                'download': int(round(self.download.speed / 1000.0, 0)),
+                'screendpi': '',
+                'upload': int(round(self.upload.speed / 1000.0, 0)),
+                'testmethod': 'http',
+                'hash': hashlib.md5(('%.0f-%.0f-%.0f-%s' % (round(self.server.latency, 0), round(self.upload.speed / 1000.0), round(self.download.speed / 1000.0), '297aae72', )).encode('utf-8')).hexdigest(),
+                'touchscreen': 'none',
+                'startmode': 'pingselect',
+                'accuracy': 1,
+                'bytesreceived': self.download.total_size,
+                'bytessent': self.upload.total_size,
+                'serverid': self.server.id,
+                    }).decode('utf-8')
+        params = urllib.parse.parse_qs(response)
+        logger.debug('{} {}'.format(response, params))
+        return {
+            'id': params.get('resultid', ['0'])[0],
+            'hash': params.get('hash_key_id', [''])[0],
+            'rating': params.get('rating', [0.0])[0],
+            'timestamp': '%s %s' % (params.get('date', ['1/1/1970'])[0], params.get('time', ['00:00 AM'])[0], )}
+    
+    @property
+    @memoized
+    def speedtestnet(self):
+        return SpeedtestNetResult.factory(self.post())
+    
+    def csv(self, headeronly=False):
+        fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
+        buff = io.StringIO(newline='')
+        f = csv.DictWriter(buff, fieldnames=fieldnames)
+        f.writeheader()
+        if not headeronly:
+            f.writerow({
+                'Server ID': self.server.id,
+                'Sponsor': self.server.sponsor,
+                'Server Name': self.server.name,
+                'Timestamp': self.timestamp,
+                'Distance': self.server.distance,
+                'Ping': self.server.latency,
+                'Download': self.download.speed,
+                'Upload': self.upload.speed,
+                'Share': '', # self.speedtestnet.image
+                'IP Address': self.client.ipaddr
+                    })
+        return buff.getvalue()
+    
+    def json(self):
+        return json.dumps({
+            'download': self.download.speed,
+            'upload': self.upload.speed,
+            'ping': self.server.latency,
+            'server': {
+                'id': self.server.id,
+                'name': self.server.name,
+                'sponsor': self.server.sponsor,
+                'url': self.server.url,
+                'host': self.server.host,
+                'country': self.server.country,
+                'cc': self.server.cc,
+                'location': {
+                    'lat': self.server.point.latitude,
+                    'lot': self.server.point.longitude}},
+            'timestamp': self.timestamp,
+            'bytes_sent': self.upload.total_size,
+            'bytes_received': self.download.total_size,
+            'share': '', # self.speedtestnet.image
+            'client': {
+                'ipaddr': self.client.ipaddr,
+                'rating': self.client.rating,
+                'cc': self.client.cc,
+                'location': {
+                    'lat': self.client.point.latitude,
+                    'lon': self.client.point.longitude},
+                'isp': {
+                    'name': self.client.isp.name,
+                    'rating': self.client.isp.rating,
+                    'average': {'down': self.client.isp.avg_down, 'up': self.client.isp.avg_up}}}}, indent=4)
+
 class HTTPUploadData(io.BytesIO):
     def __init__(self, size):
         super().__init__()
@@ -611,113 +718,6 @@ class Servers(object):
         def sort_by_distance(servers):
             return sorted(servers, key=lambda server: server.distance)
         return sort_by_distance(self.servers)[:limit]
-
-class TestSuiteResults:
-    def __init__(self, testsuite, download, upload):
-        self.testsuite = testsuite
-        self.download = download
-        self.upload = upload
-        self._timestamp = datetime.datetime.utcnow()
-
-    @property
-    def timestamp(self):
-        return '%sZ' % self._timestamp.isoformat()
-    
-    @property
-    def server(self):
-        return self.testsuite.server
-    
-    @property
-    def client(self):
-        return self.testsuite.client
-    
-    def post(self):
-        client = HttpClient()
-        #response = client.post('https://www.speedtest.net/api/api.php',
-        response = client.post('https://tayhoon.sakura.ne.jp/speedtest/api/api.php',
-            headers={
-                'Referer': 'http://c.speedtest.net/flash/speedtest.swf'},
-            params={
-                'recommendedserverid': self.server.id,
-                'ping': int(round(self.server.latency, 0)),
-                'screenresolution': '',
-                'promo': '',
-                'download': int(round(self.download.speed / 1000.0, 0)),
-                'screendpi': '',
-                'upload': int(round(self.upload.speed / 1000.0, 0)),
-                'testmethod': 'http',
-                'hash': hashlib.md5(('%.0f-%.0f-%.0f-%s' % (round(self.server.latency, 0), round(self.upload.speed / 1000.0), round(self.download.speed / 1000.0), '297aae72', )).encode('utf-8')).hexdigest(),
-                'touchscreen': 'none',
-                'startmode': 'pingselect',
-                'accuracy': 1,
-                'bytesreceived': self.download.total_size,
-                'bytessent': self.upload.total_size,
-                'serverid': self.server.id,
-                    }).decode('utf-8')
-        params = urllib.parse.parse_qs(response)
-        logger.debug('{} {}'.format(response, params))
-        return {
-            'id': params.get('resultid', ['0'])[0],
-            'hash': params.get('hash_key_id', [''])[0],
-            'rating': params.get('rating', [0.0])[0],
-            'timestamp': '%s %s' % (params.get('date', ['1/1/1970'])[0], params.get('time', ['00:00 AM'])[0], )}
-    
-    @property
-    @memoized
-    def speedtestnet(self):
-        return SpeedtestNetResult.factory(self.post())
-    
-    def csv(self, headeronly=False):
-        fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
-        buff = io.StringIO(newline='')
-        f = csv.DictWriter(buff, fieldnames=fieldnames)
-        f.writeheader()
-        if not headeronly:
-            f.writerow({
-                'Server ID': self.server.id,
-                'Sponsor': self.server.sponsor,
-                'Server Name': self.server.name,
-                'Timestamp': self.timestamp,
-                'Distance': self.server.distance,
-                'Ping': self.server.latency,
-                'Download': self.download.speed,
-                'Upload': self.upload.speed,
-                'Share': '', # self.speedtestnet.image
-                'IP Address': self.client.ipaddr
-                    })
-        return buff.getvalue()
-    
-    def json(self):
-        return json.dumps({
-            'download': self.download.speed,
-            'upload': self.upload.speed,
-            'ping': self.server.latency,
-            'server': {
-                'id': self.server.id,
-                'name': self.server.name,
-                'sponsor': self.server.sponsor,
-                'url': self.server.url,
-                'host': self.server.host,
-                'country': self.server.country,
-                'cc': self.server.cc,
-                'location': {
-                    'lat': self.server.point.latitude,
-                    'lot': self.server.point.longitude}},
-            'timestamp': self.timestamp,
-            'bytes_sent': self.upload.total_size,
-            'bytes_received': self.download.total_size,
-            'share': '', # self.speedtestnet.image
-            'client': {
-                'ipaddr': self.client.ipaddr,
-                'rating': self.client.rating,
-                'cc': self.client.cc,
-                'location': {
-                    'lat': self.client.point.latitude,
-                    'lon': self.client.point.longitude},
-                'isp': {
-                    'name': self.client.isp.name,
-                    'rating': self.client.isp.rating,
-                    'average': {'down': self.client.isp.avg_down, 'up': self.client.isp.avg_up}}}}, indent=4)
 
 class TestSuite(object):
     def __init__(self):
