@@ -589,6 +589,7 @@ class Server(object):
                     conn.close()
                 conn = None
         return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
+    ping=latency
     
     def download(self):
         terminated = threading.Event()
