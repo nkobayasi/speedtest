@@ -7,7 +7,11 @@ import io
 import os
 import math
 import time
+import datetime
 import ipaddress
+import csv
+import json
+import hashlib
 import platform
 import ssl
 import queue
@@ -85,23 +89,34 @@ class HttpClient(object):
                 version=__version__)
         #return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
     
-    def get(self, url, params={}):
+    def get(self, url, params={}, headers={}):
+        def merge_dict(values, merge_values={}):
+            values.update(merge_values)
+            return values
+        
         params.update({'x': '%.1f' % (time.time() * 1000.0, )})
         request = urllib.request.Request(url + '?' + urllib.parse.urlencode(params),
-            headers={
+            headers=merge_dict({
                 'User-Agent': self.user_agent,
-                'Cache-Control': 'no-cache', })
+                'Cache-Control': 'no-cache', }, headers))
         logger.debug(request.full_url)
         with urllib.request.urlopen(request) as f:
             return f.read()
 
-    def post(self, url, params={}):
+    def post(self, url, params={}, headers={}):
+        def merge_dict(values, merge_values={}):
+            values.update(merge_values)
+            return values
+
+        data = urllib.parse.urlencode(params).encode('ascii')
         request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%.1f' % (time.time() * 1000.0, )}),
-            headers={
-                'User-Agent': self.user_agent, # Header "Content-Type: application/x-www-form-urlencoded" will be added as a default.
-                'Cache-Control': 'no-cache', },
-            data=urllib.parse.urlencode(params).encode('ascii'))
-        logger.debug(request.full_url)
+            headers=merge_dict({
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Length': len(data),
+                'User-Agent': self.user_agent,
+                'Cache-Control': 'no-cache', }, headers),
+            data=data)
+        logger.debug('{} {} {}'.format(request.full_url, request.header_items(), request.data))
         with urllib.request.urlopen(request) as f:
             return f.read()
 
@@ -115,6 +130,11 @@ class Point(object):
     
     def __str__(self):
         return '({:.1f},{:.1f})'.format(self.latitude, self.longitude)
+    
+    def __iter__(self):
+        return iter({
+            'lat': self.latitude,
+            'lot': self.longitude}.items())
         
     def distance_to(self, point):
         radius = 6371  # km
@@ -145,6 +165,12 @@ class ISP(object):
 
     def __repr__(self):
         return '<ISP: name="{}",rating={:.1f},avg=(down={:.1f},up={:.1f})>'.format(self.name, self.rating, self.avg_down, self.avg_up)
+    
+    def __iter__(self):
+        return iter({
+            'name': self.name,
+            'rating': self.rating,
+            'average': {'down': self.avg_down, 'up': self.avg_up}}.items())
 
 class Client(object):
     def __init__(self, ipaddr, cc, point, rating, isp):
@@ -170,6 +196,14 @@ class Client(object):
         
     def __repr__(self):
         return '<Client: ipaddr={!s},cc="{}",point={!s},rating={:.1f},isp={!r}>'.format(self.ipaddr, self.cc, self.point, self.rating, self.isp)
+    
+    def __iter__(self):
+        return iter({
+            'ipaddr': self.ipaddr,
+            'cc': self.cc,
+            'location': dict(self.point),
+            'rating': self.rating,
+            'isp': dict(self.isp)}.items())
 
 class Config(object):
     def __init__(self):
@@ -259,12 +293,134 @@ class Results(object):
         for size, elapsed in self.histgrams.items():
             results[size] = sum(elapsed) / len(elapsed)
         return results
+    
+    @property
+    def total_bits(self):
+        return self.total_size * 8
+    
+    @property
+    def speed(self):
+        return float(self.total_bits) / self.total_elapsed
 
 class UploadResults(Results):
     pass
 
 class DownloadResults(Results):
     pass
+
+class SpeedtestNetResult(object):
+    def __init__(self, id, hash, rating, timestamp):
+        self.id = id
+        self.hash = hash
+        self.rating = float(rating)
+        self._timestamp = timestamp
+        
+    def __repr__(self):
+        return '<SpeedtestNetResult: id={},hash={},rating={},timestamp="{}">'.format(self.id, self.hash, self.rating, self.timestamp)
+        
+    @classmethod
+    def factory(cls, params):
+        self = cls(
+            id=params['id'],
+            hash=params['hash'],
+            rating=params['rating'],
+            timestamp=datetime.datetime.strptime(params['timestamp'], '%m/%d/%Y %I:%M %p'))
+        return self
+    
+    @property
+    def timestamp(self):
+        return '%sZ' % self._timestamp.isoformat()
+    
+    @property
+    def image(self):
+        return 'http://www.speedtest.net/result/%s.png' % (self.id, )
+
+class TestSuiteResults:
+    def __init__(self, testsuite, download, upload):
+        self.testsuite = testsuite
+        self.download = download
+        self.upload = upload
+        self._timestamp = datetime.datetime.utcnow()
+
+    @property
+    def timestamp(self):
+        return '%sZ' % self._timestamp.isoformat()
+    
+    @property
+    def server(self):
+        return self.testsuite.server
+    
+    @property
+    def client(self):
+        return self.testsuite.client
+    
+    def post(self):
+        client = HttpClient()
+        #response = client.post('https://www.speedtest.net/api/api.php',
+        response = client.post('https://tayhoon.sakura.ne.jp/speedtest/api/api.php',
+            headers={
+                'Referer': 'http://c.speedtest.net/flash/speedtest.swf'},
+            params={
+                'recommendedserverid': self.server.id,
+                'ping': int(round(self.server.latency, 0)),
+                'screenresolution': '',
+                'promo': '',
+                'download': int(round(self.download.speed / 1000.0, 0)),
+                'screendpi': '',
+                'upload': int(round(self.upload.speed / 1000.0, 0)),
+                'testmethod': 'http',
+                'hash': hashlib.md5(('%.0f-%.0f-%.0f-%s' % (round(self.server.latency, 0), round(self.upload.speed / 1000.0), round(self.download.speed / 1000.0), '297aae72', )).encode('utf-8')).hexdigest(),
+                'touchscreen': 'none',
+                'startmode': 'pingselect',
+                'accuracy': 1,
+                'bytesreceived': self.download.total_size,
+                'bytessent': self.upload.total_size,
+                'serverid': self.server.id,
+                    }).decode('utf-8')
+        params = urllib.parse.parse_qs(response)
+        logger.debug('{} {}'.format(response, params))
+        return {
+            'id': params.get('resultid', ['0'])[0],
+            'hash': params.get('hash_key_id', [''])[0],
+            'rating': params.get('rating', [0.0])[0],
+            'timestamp': '%s %s' % (params.get('date', ['1/1/1970'])[0], params.get('time', ['00:00 AM'])[0], )}
+    
+    @property
+    @memoized
+    def speedtestnet(self):
+        return SpeedtestNetResult.factory(self.post())
+    
+    def csv(self, headeronly=False):
+        fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
+        buff = io.StringIO(newline='')
+        f = csv.DictWriter(buff, fieldnames=fieldnames)
+        f.writeheader()
+        if not headeronly:
+            f.writerow({
+                'Server ID': self.server.id,
+                'Sponsor': self.server.sponsor,
+                'Server Name': self.server.name,
+                'Timestamp': self.timestamp,
+                'Distance': self.server.distance,
+                'Ping': self.server.latency,
+                'Download': self.download.speed,
+                'Upload': self.upload.speed,
+                'Share': '', # self.speedtestnet.image
+                'IP Address': self.client.ipaddr
+                    })
+        return buff.getvalue()
+    
+    def json(self):
+        return json.dumps({
+            'download': self.download.speed,
+            'upload': self.upload.speed,
+            'ping': self.server.latency,
+            'server': dict(self.server),
+            'timestamp': self.timestamp,
+            'bytes_sent': self.upload.total_size,
+            'bytes_received': self.download.total_size,
+            'share': '', # self.speedtestnet.image
+            'client': dict(self.client)}, indent=4)
 
 class HTTPUploadData(io.BytesIO):
     def __init__(self, size):
@@ -368,7 +524,7 @@ class HTTPCancelableDownloader(HTTPDownloader):
 class Server(object):
     def __init__(self, testsuite, id, name, url, host, country, cc, sponsor, point):
         self.testsuite = testsuite
-        self.id = id
+        self.id = int(id)
         self.name = name
         self.url = url
         self.host = host
@@ -381,7 +537,7 @@ class Server(object):
     def fromElement(cls, testsuite, element):
         self = cls(
             testsuite=testsuite,
-            id=element.getAttribute('id'),
+            id=int(element.getAttribute('id')),
             name=element.getAttribute('name'),
             url=element.getAttribute('url'),
             host=element.getAttribute('host'),
@@ -394,6 +550,17 @@ class Server(object):
         
     def __repr__(self):
         return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f}>'.format(self.id, self.name, self.country, self.cc, self.url, self.host, self.sponsor, self.point, self.distance)
+    
+    def __iter__(self):
+        return iter({
+            'id': self.id,
+            'name': self.name,
+            'url': self.url,
+            'host': self.host,
+            'country': self.country,
+            'cc': self.cc,
+            'sponsor': self.sponsor,
+            'location': dict(self.point)}.items())
     
     @property
     @memoized
@@ -432,6 +599,7 @@ class Server(object):
                     conn.close()
                 conn = None
         return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
+    ping=latency
     
     def download(self):
         terminated = threading.Event()
@@ -562,11 +730,6 @@ class Servers(object):
             return sorted(servers, key=lambda server: server.distance)
         return sort_by_distance(self.servers)[:limit]
 
-@dataclass
-class TestSuiteResults:
-    download: DownloadResults
-    upload: UploadResults
-
 class TestSuite(object):
     def __init__(self):
         self.config = Config()
@@ -587,35 +750,39 @@ class TestSuite(object):
     
     @property
     @memoized
-    def best_server(self):
+    def server(self):
         return self.get_best_server()
 
     def download(self):
-        return self.best_server.download()
+        return self.server.download()
 
     def upload(self):
-        return self.best_server.upload()
+        return self.server.upload()
     
     @property
     @memoized
     def results(self):
-        return TestSuiteResults(self.download(), self.upload())
+        return TestSuiteResults(self, self.download(), self.upload())
 
 def main():
     logger.setLevel(logging.DEBUG)
     t = TestSuite()
     print('== Selected Server')
-    print(t.best_server)
-    print('{}km'.format(t.best_server.distance))
-    print('{}pt'.format(t.best_server.latency))
+    print(t.server)
+    print('{}km'.format(t.server.distance))
+    print('{}pt'.format(t.server.latency))
     print('== Download Results')
     for size, elapsed in t.results.download.histgram.items():
-        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
-    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(t.results.download.total_size), t.results.download.total_elapsed, units.Bandwidth(t.results.download.total_size*8.0 / t.results.download.total_elapsed)))
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8.0/elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(t.results.download.total_size), t.results.download.total_elapsed, units.Bandwidth(t.results.download.speed)))
     print('== Upload Results')
     for size, elapsed in t.results.upload.histgram.items():
-        print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(size), elapsed, units.Bandwidth(size*8.0 / elapsed)))
-    print('{!s}B / {:.1f}s => {!s}bps'.format(units.VolumeSize(t.results.upload.total_size), t.results.upload.total_elapsed, units.Bandwidth(t.results.upload.total_size*8.0 / t.results.upload.total_elapsed)))
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8.0/elapsed)))
+    print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(t.results.upload.total_size), t.results.upload.total_elapsed, units.Bandwidth(t.results.upload.speed)))
+    print(t.results.json())
+    print(t.results.csv())
+    print(t.results.speedtestnet)
+    print(t.results.speedtestnet.image)
 
 if __name__ == '__main__':
     main()
