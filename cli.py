@@ -34,7 +34,8 @@ class Option(object):
         parser.add_argument('--secure', action='store_true', help='Use HTTPS instead of HTTP when communicating with speedtest.net operated servers')
         parser.add_argument('--no-pre-allocate', action='store_false', dest='pre_allocate', help='Do not pre allocate upload data. Pre allocation is enabled by default to improve upload performance. To support systems with insufficient memory, use this option to avoid a MemoryError')
         parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS, default=argparse.SUPPRESS)
-        self.args = parser.parse_args(['--list'])
+        self.args = parser.parse_args([])
+        print(self.args)
 
 def main():
     option = Option()
@@ -52,6 +53,19 @@ def main():
                 'name': server.name,
                 'country': server.country,
                 'distance': server.distance, })
+        return
+    if option.args.server:
+        download = speedtest.DownloadResults()
+        upload = speedtest.UploadResults()
+        for server in map(lambda id: testsuite.servers.findById(id), option.args.server):
+            download += server.download
+            upload += server.upload
+        print('Download: %s%s/s\nUpload: %s%s/s' % (
+            units.Bandwidth(download.speed) / option.args.units[1],
+            option.args.units[0],
+            units.Bandwidth(upload.speed) / option.args.units[1],
+            option.args.units[0], ))
+        return
     if option.args.mini:
         server = testsuite.servers.findByUrl(url=option.args.mini)
         print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
@@ -60,13 +74,14 @@ def main():
             option.args.units[0],
             units.Bandwidth(server.upload.speed) / option.args.units[1],
             option.args.units[0], ))
+        return
     if option.args.download:
         print('Download: %s%s/s' % (
-            units.Bandwidth(testsuite.results.download.speed) / option.args.units[1],
+            units.Bandwidth(testsuite.server.download.speed) / option.args.units[1],
             option.args.units[0], ))
     if option.args.upload:
         print('Upload: %s%s/s' % (
-            units.Bandwidth(testsuite.results.upload.speed) / option.args.units[1],
+            units.Bandwidth(testsuite.server.upload.speed) / option.args.units[1],
             option.args.units[0], ))
     if option.args.simple:
         print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
