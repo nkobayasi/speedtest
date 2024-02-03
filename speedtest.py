@@ -272,6 +272,21 @@ class Results(object):
         self.histgrams = {}
         self.total_size = 0
         self.total_elapsed = 0.0
+
+    def __add__(self, other):
+        if not isinstance(other, Results):
+            raise TypeError()
+        results = Results()
+        for result in self.results + other.results:
+            results.append(result)
+        return results
+    
+    def __iadd__(self, other):
+        if not isinstance(other, Results):
+            raise TypeError()
+        for result in other.results:
+            self.append(result)
+        return self
         
     def append(self, result):
         if result['elapsed'] < 0:
@@ -596,7 +611,7 @@ class Server(object):
         return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
     ping=latency
     
-    def download(self):
+    def do_download(self):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
@@ -625,7 +640,7 @@ class Server(object):
         terminated.set()
         return results
         
-    def upload(self):
+    def do_upload(self):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
@@ -655,6 +670,16 @@ class Server(object):
             results.append(resultq.get())
         terminated.set()
         return results
+
+    @property
+    @memoized
+    def download(self):
+        return self.do_download()
+
+    @property
+    @memoized
+    def upload(self):
+        return self.do_upload()
 
 class MiniServer(Server):
     def __init__(self, testsuite):
@@ -772,10 +797,10 @@ class TestSuite(object):
         return self.get_best_server()
 
     def download(self):
-        return self.server.download()
+        return self.server.do_download()
 
     def upload(self):
-        return self.server.upload()
+        return self.server.do_upload()
     
     @property
     @memoized
@@ -797,6 +822,10 @@ def main():
     for size, elapsed in t.results.upload.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8.0/elapsed)))
     print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(t.results.upload.total_size), t.results.upload.total_elapsed, units.Bandwidth(t.results.upload.speed)))
+    r = t.results.download
+    print(r.results, r.total_size)
+    r = r + r
+    print(r.results, r.total_size)
     print(t.results.json())
     print(t.results.csv())
     print(t.results.speedtestnet)
