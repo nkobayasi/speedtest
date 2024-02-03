@@ -386,24 +386,23 @@ class TestSuiteResults:
     def speedtestnet(self):
         return SpeedtestNetResult.factory(self.post())
     
-    def csv(self, headeronly=False):
+    def csv(self):
         fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
         buff = io.StringIO(newline='')
         f = csv.DictWriter(buff, fieldnames=fieldnames)
         f.writeheader()
-        if not headeronly:
-            f.writerow({
-                'Server ID': self.server.id,
-                'Sponsor': self.server.sponsor,
-                'Server Name': self.server.name,
-                'Timestamp': self.timestamp,
-                'Distance': self.server.distance,
-                'Ping': self.server.latency,
-                'Download': self.download.speed,
-                'Upload': self.upload.speed,
-                'Share': '', # self.speedtestnet.image
-                'IP Address': self.client.ipaddr
-                    })
+        f.writerow({
+            'Server ID': self.server.id,
+            'Sponsor': self.server.sponsor,
+            'Server Name': self.server.name,
+            'Timestamp': self.timestamp,
+            'Distance': self.server.distance,
+            'Ping': self.server.latency,
+            'Download': self.download.speed,
+            'Upload': self.upload.speed,
+            'Share': '', # self.speedtestnet.image
+            'IP Address': self.client.ipaddr
+                })
         return buff.getvalue()
     
     def json(self):
@@ -731,6 +730,18 @@ class Servers(object):
             self._iter_index += 1
             return result
         raise StopIteration()
+    
+    def findById(self, id):
+        for server in self.servers:
+            if server.id == id:
+                return server
+        raise Exception('Not Found')
+    
+    def findByUrl(self, url):
+        for server in self.servers:
+            if server.url == url:
+                return server
+        raise Exception('Not Found')
                 
     def get_closest_servers(self, limit=5):
         def sort_by_distance(servers):
