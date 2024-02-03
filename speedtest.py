@@ -795,17 +795,27 @@ class TestSuite(object):
     @memoized
     def server(self):
         return self.get_best_server()
+    
+    def do_download(self):
+        return self.server.do_download()
 
+    def do_upload(self):
+        return self.server.do_upload()
+
+    @property
+    @memoized
     def download(self):
         return self.server.do_download()
 
+    @property
+    @memoized
     def upload(self):
         return self.server.do_upload()
     
     @property
     @memoized
     def results(self):
-        return TestSuiteResults(self, self.download(), self.upload())
+        return TestSuiteResults(self, self.server.do_download(), self.server.do_upload())
 
 def main():
     logger.setLevel(logging.DEBUG)
