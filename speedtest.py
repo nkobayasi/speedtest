@@ -130,6 +130,11 @@ class Point(object):
     
     def __str__(self):
         return '({:.1f},{:.1f})'.format(self.latitude, self.longitude)
+    
+    def __iter__(self):
+        return iter({
+            'lat': self.latitude,
+            'lot': self.longitude}.items())
         
     def distance_to(self, point):
         radius = 6371  # km
@@ -160,6 +165,12 @@ class ISP(object):
 
     def __repr__(self):
         return '<ISP: name="{}",rating={:.1f},avg=(down={:.1f},up={:.1f})>'.format(self.name, self.rating, self.avg_down, self.avg_up)
+    
+    def __iter__(self):
+        return iter({
+            'name': self.name,
+            'rating': self.rating,
+            'average': {'down': self.avg_down, 'up': self.avg_up}}.items())
 
 class Client(object):
     def __init__(self, ipaddr, cc, point, rating, isp):
@@ -185,6 +196,14 @@ class Client(object):
         
     def __repr__(self):
         return '<Client: ipaddr={!s},cc="{}",point={!s},rating={:.1f},isp={!r}>'.format(self.ipaddr, self.cc, self.point, self.rating, self.isp)
+    
+    def __iter__(self):
+        return iter({
+            'ipaddr': self.ipaddr,
+            'cc': self.cc,
+            'location': dict(self.point),
+            'rating': self.rating,
+            'isp': dict(self.isp)}.items())
 
 class Config(object):
     def __init__(self):
@@ -396,32 +415,12 @@ class TestSuiteResults:
             'download': self.download.speed,
             'upload': self.upload.speed,
             'ping': self.server.latency,
-            'server': {
-                'id': self.server.id,
-                'name': self.server.name,
-                'sponsor': self.server.sponsor,
-                'url': self.server.url,
-                'host': self.server.host,
-                'country': self.server.country,
-                'cc': self.server.cc,
-                'location': {
-                    'lat': self.server.point.latitude,
-                    'lot': self.server.point.longitude}},
+            'server': dict(self.server),
             'timestamp': self.timestamp,
             'bytes_sent': self.upload.total_size,
             'bytes_received': self.download.total_size,
             'share': '', # self.speedtestnet.image
-            'client': {
-                'ipaddr': self.client.ipaddr,
-                'rating': self.client.rating,
-                'cc': self.client.cc,
-                'location': {
-                    'lat': self.client.point.latitude,
-                    'lon': self.client.point.longitude},
-                'isp': {
-                    'name': self.client.isp.name,
-                    'rating': self.client.isp.rating,
-                    'average': {'down': self.client.isp.avg_down, 'up': self.client.isp.avg_up}}}}, indent=4)
+            'client': dict(self.client)}, indent=4)
 
 class HTTPUploadData(io.BytesIO):
     def __init__(self, size):
@@ -551,6 +550,17 @@ class Server(object):
         
     def __repr__(self):
         return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f}>'.format(self.id, self.name, self.country, self.cc, self.url, self.host, self.sponsor, self.point, self.distance)
+    
+    def __iter__(self):
+        return iter({
+            'id': self.id,
+            'name': self.name,
+            'url': self.url,
+            'host': self.host,
+            'country': self.country,
+            'cc': self.cc,
+            'sponsor': self.sponsor,
+            'location': dict(self.point)}.items())
     
     @property
     @memoized
