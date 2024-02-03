@@ -24,8 +24,6 @@ class Option(object):
         parser.add_argument('--share', action='store_true', help='Generate and provide a URL to the speedtest.net share results image, not displayed with --csv')
         parser.add_argument('--simple', action='store_true', help='Suppress verbose output, only show basic information')
         parser.add_argument('--csv', action='store_true', help='Suppress verbose output, only show basic information in CSV format. Speeds listed in bit/s and not affected by --bytes')
-        parser.add_argument('--csv-delimiter', default=',', type=str, help='Single character delimiter to use in CSV output. Default "%(default)s"')
-        parser.add_argument('--csv-header', action='store_true', help='Print CSV headers')
         parser.add_argument('--json', action='store_true', help='Suppress verbose output, only show basic information in JSON format. Speeds listed in bit/s and not affected by --bytes')
         parser.add_argument('--list', action='store_true', help='Display a list of speedtest.net servers sorted by distance')
         parser.add_argument('--server', action='append', type=int, help='Specify a server ID to test against. Can be supplied multiple times')
@@ -36,7 +34,7 @@ class Option(object):
         parser.add_argument('--secure', action='store_true', help='Use HTTPS instead of HTTP when communicating with speedtest.net operated servers')
         parser.add_argument('--no-pre-allocate', action='store_false', dest='pre_allocate', help='Do not pre allocate upload data. Pre allocation is enabled by default to improve upload performance. To support systems with insufficient memory, use this option to avoid a MemoryError')
         parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS, default=argparse.SUPPRESS)
-        self.args = parser.parse_args(['--version'])
+        self.args = parser.parse_args(['--list'])
 
 def main():
     option = Option()
@@ -54,6 +52,14 @@ def main():
                 'name': server.name,
                 'country': server.country,
                 'distance': server.distance, })
+    if option.args.mini:
+        server = testsuite.servers.findByUrl(url=option.args.mini)
+        print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
+            server.latency,
+            units.Bandwidth(server.download().speed) / option.args.units[1],
+            option.args.units[0],
+            units.Bandwidth(server.upload().speed) / option.args.units[1],
+            option.args.units[0], ))
     if option.args.download:
         print('Download: %s%s/s' % (
             units.Bandwidth(testsuite.results.download.speed) / option.args.units[1],
