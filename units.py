@@ -143,6 +143,9 @@ class IECUnit(object):
 class Bandwidth(IECUnit):
     pass
 
+class Size(IECUnit):
+    pass
+
 class VolumeSize(IECUnit):
     pass
 
