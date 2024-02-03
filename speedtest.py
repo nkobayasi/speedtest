@@ -44,6 +44,10 @@ def memoized_property(func):
     return property(memoized(func))
 cached_property=memoized_property
 
+def merge_dict(value, other={}):
+    value.update(other)
+    return value
+
 class StderrHandler(logging.StreamHandler):
     def __init__(self):
         super().__init__()
@@ -90,10 +94,6 @@ class HttpClient(object):
         #return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
     
     def get(self, url, params={}, headers={}):
-        def merge_dict(values, merge_values={}):
-            values.update(merge_values)
-            return values
-        
         params.update({'x': '%.1f' % (time.time() * 1000.0, )})
         request = urllib.request.Request(url + '?' + urllib.parse.urlencode(params),
             headers=merge_dict({
@@ -104,10 +104,6 @@ class HttpClient(object):
             return f.read()
 
     def post(self, url, params={}, headers={}):
-        def merge_dict(values, merge_values={}):
-            values.update(merge_values)
-            return values
-
         data = urllib.parse.urlencode(params).encode('ascii')
         request = urllib.request.Request(url + '?' + urllib.parse.urlencode({'x': '%.1f' % (time.time() * 1000.0, )}),
             headers=merge_dict({
