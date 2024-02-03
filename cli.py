@@ -56,9 +56,9 @@ def main():
         server = testsuite.servers.findByUrl(url=option.args.mini)
         print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
             server.latency,
-            units.Bandwidth(server.download().speed) / option.args.units[1],
+            units.Bandwidth(server.download.speed) / option.args.units[1],
             option.args.units[0],
-            units.Bandwidth(server.upload().speed) / option.args.units[1],
+            units.Bandwidth(server.upload.speed) / option.args.units[1],
             option.args.units[0], ))
     if option.args.download:
         print('Download: %s%s/s' % (
