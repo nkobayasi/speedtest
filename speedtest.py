@@ -968,15 +968,6 @@ class NullOption(object):
 def main():
     logger.setLevel(logging.DEBUG)
     t = TestSuite(option=NullOption())
-    m = MiniServer(t, url='https://tayhoon.sakura.ne.jp/speedtest/api/ext/')
-    print('{!r}'.format(m))
-    return
-    
-    s = NullServer(t)
-    print('{!r}'.format(s))
-    print('{!s}bps'.format(units.Bandwidth(s.upload.speed)))
-    return
-    
     print('== Selected Server')
     print(t.server)
     print('{}km'.format(t.server.distance))
