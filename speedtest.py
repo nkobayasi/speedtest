@@ -464,7 +464,7 @@ class HTTPUploadData0(object):
         elif whence == os.SEEK_CUR:
             self.curr += offset
         elif whence == os.SEEK_END:
-            self.curr = self.size + offset
+            self.curr = self._size + offset
         if self.curr < 0:
             self.curr = 0
         if self._size < self.curr:
