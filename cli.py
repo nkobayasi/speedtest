@@ -90,7 +90,7 @@ def main():
             option.args.units[0], ))
         return
     if option.args.mini:
-        server = testsuite.MiniServer(testsuite, url=option.args.mini)
+        server = speedtest.MiniServer(testsuite, url=option.args.mini)
         print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
             server.latency,
             units.Bandwidth(server.download.speed) / option.args.units[1],
