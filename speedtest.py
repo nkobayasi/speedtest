@@ -3,8 +3,10 @@
 
 from functools import wraps
 import dataclasses
+import re
 import io
 import os
+import os.path
 import math
 import time
 import datetime
@@ -649,7 +651,7 @@ class Server(object):
         return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f}>'.format(self.id, self.name, self.country, self.cc, self.url, self.host, self.sponsor, self.point, self.distance)
     
     def __str__(self):
-        return '{id:5d}) {sponsor} ({name}, {country}) [{distance:.2f}km]'.format(
+        return '{id}) {sponsor} ({name}, {country}) [{distance:.2f}km]'.format(
             id=self.id,
             sponsor=self.sponsor,
             name=self.name,
@@ -782,15 +784,47 @@ class Server(object):
         return self.do_upload()
 
 class MiniServer(Server):
-    def __init__(self, testsuite):
-        server = testsuite.servers.servers[0]
+    def __init__(self, testsuite, url):
+        def count_lines(value):
+            return len(value.strip().splitlines())
+        
+        logger.debug(url)
+        url = urllib.parse.urlparse(url)
+        dirname, basename = os.path.split(url.path)
+        root, ext = os.path.splitext(url.path)
+        logger.debug('dirname="{}" basename="{}" root="{}" ext="{}"'.format(dirname, basename, root, ext))
+
+        # Extract dir name only        
+        if ext:
+            request_url = urllib.parse.urljoin(url.geturl(), dirname)
+        else:
+            request_url = url.geturl().rstrip('/')
+        logger.debug(request_url)
+        
+        client = HttpClient()
+        response = client.get(request_url).decode('utf-8')
+        extensions = re.findall(r'upload_?[Ee]xtension: "([^"]+)"', response)
+        if not extensions:
+            for ext in ('php', 'asp', 'aspx', 'jsp'):
+                try:
+                    response = client.get(request_url + '/speedtest/upload.%s' % (ext, )).decode('utf-8')
+                    if count_lines(response) == 1 and re.match(r'size=[0-9]', response):
+                        extensions = [ext]
+                        break
+                except Exception:
+                    pass
+        
+        logger.debug(extensions)
+        if not extensions:
+            raise Exception()
+        
         super().__init__(testsuite,
             id=0,
-            name='Speedtest Mini Server',
-            url=server.url,
-            host=server.host,
-            country=server.country,
-            cc=server.cc,
+            name=url.netloc,
+            url=request_url + '/speedtest/upload.%s' % (extensions[0], ),
+            host='',
+            country='',
+            cc='',
             sponsor='Speedtest Mini',
             point=Point(0.0, 0.0))
     
@@ -806,12 +840,12 @@ class NullServer(Server):
     def __init__(self, testsuite):
         super().__init__(testsuite,
             id=0,
-            name='Speedtest Mini Server',
-            url='http://sp5.atcc-gns.net:8080/speedtest/upload.php',
-            host='sp5.atcc-gns.net:8080',
+            name='Speedtest Null Server',
+            url='https://tayhoon.sakura.ne.jp/speedtest/upload.php',
+            host='tayhoon.sakura.ne.jp',
             country='Japan',
             cc='JP',
-            sponsor='Speedtest Mini',
+            sponsor='(Sponsor Name)',
             point=Point(0.0, 0.0))
     
     @property
@@ -934,6 +968,15 @@ class NullOption(object):
 def main():
     logger.setLevel(logging.DEBUG)
     t = TestSuite(option=NullOption())
+    m = MiniServer(t, url='https://tayhoon.sakura.ne.jp/speedtest/api/ext/')
+    print('{!r}'.format(m))
+    return
+    
+    s = NullServer(t)
+    print('{!r}'.format(s))
+    print('{!s}bps'.format(units.Bandwidth(s.upload.speed)))
+    return
+    
     print('== Selected Server')
     print(t.server)
     print('{}km'.format(t.server.distance))
