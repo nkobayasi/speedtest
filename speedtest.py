@@ -441,6 +441,92 @@ class HTTPUploadData(io.BytesIO):
             self.write(chars)
         self.truncate(size)
         self.seek(0, os.SEEK_SET)
+        self._size = size
+        
+    @property
+    def size(self):
+        return self._size
+
+class HTTPUploadData0(object):
+    def __init__(self, size):
+        self.closed = False
+        self.curr = 0
+        self._size = size
+
+    def __del__(self):
+        self.close()
+
+    @property
+    def size(self):
+        return self._size
+
+    def close(self):
+        self.closed = True
+
+    def fileno(self):
+        raise OSError()
+    
+    def flush(self):
+        pass
+
+    def seekable(self):
+        return True
+
+    def seek(self, offset, whence=os.SEEK_SET):
+        if whence == os.SEEK_SET:
+            self.curr = offset
+        elif whence == os.SEEK_CUR:
+            self.curr += offset
+        elif whence == os.SEEK_END:
+            self.curr = self._size + offset
+        if self.curr < 0:
+            self.curr = 0
+        if self._size < self.curr:
+            self.curr = self._size
+
+    def tell(self):
+        return self.curr
+
+    def truncate(self, size=None):
+        if size < 0:
+            return self._size
+        if size is None:
+            self._size = self.curr
+        else:
+            self._size = size
+        return self._size
+    
+    def writable(self):
+        return True
+
+    def write(self, b):
+        pass
+    
+    def readable(self):
+        return True
+
+    def read(self, size=-1):
+        first = b'content1='
+        chars = b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+        if size < 0:
+            size = self._size
+        result = b''
+        if self.curr < len(first) and 0 < size and self.curr < self._size:
+            p = self.curr
+            x = first[p:p+min(size, self._size - self.curr)]
+            size -= len(x)
+            self.curr += len(x)
+            result += x
+        while 0 < size and self.curr < self._size:
+            p = (self.curr - len(first)) % len(chars)
+            x = chars[p:p+min(size, self._size - self.curr)]
+            size -= len(x)
+            self.curr += len(x)
+            result += x
+        if self._size < self.curr:
+            self.curr = self._size
+        return result
 
 class HTTPCancelableUploadData(HTTPUploadData):
     def __init__(self, size, terminated):
@@ -660,7 +746,7 @@ class Server(object):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache',
                     'Content-Type': 'application/x-www-form-urlencoded',
-                    'Content-Length': size, },
+                    'Content-Length': data.size, },
                 data=data)
             logger.debug(request.full_url)
             requestq.put(request)
