@@ -514,7 +514,6 @@ class HTTPUploadData0(object):
             self.curr = self._size
         return result
 
-
 class HTTPCancelableUploadData(HTTPUploadData):
     def __init__(self, size, terminated):
         super().__init__(size)
