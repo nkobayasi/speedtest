@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 from functools import wraps
-from dataclasses import dataclass
+import dataclasses
 import io
 import os
 import math
@@ -20,6 +20,7 @@ import multiprocessing
 import http.client
 import urllib.request
 import urllib.parse
+import urllib.error
 import xml.dom
 import xml.dom.minidom
 import logging
@@ -63,7 +64,7 @@ class FileHandler(logging.handlers.WatchedFileHandler):
         super().__init__(filename, encoding='utf-8')
         self.setFormatter(logging.Formatter('[%(asctime)s] [%(process)d] %(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
 
-logger = logging.getLogger('ping').getChild(__name__)
+logger = logging.getLogger('speedtest').getChild(__name__)
 logger.addHandler(StderrHandler())
 
 class HttpRetrievalError(Exception): pass
@@ -272,6 +273,21 @@ class Results(object):
         self.histgrams = {}
         self.total_size = 0
         self.total_elapsed = 0.0
+
+    def __add__(self, other):
+        if not isinstance(other, Results):
+            raise TypeError()
+        results = Results()
+        for result in self.results + other.results:
+            results.append(result)
+        return results
+    
+    def __iadd__(self, other):
+        if not isinstance(other, Results):
+            raise TypeError()
+        for result in other.results:
+            self.append(result)
+        return self
         
     def append(self, result):
         if result['elapsed'] < 0:
@@ -386,24 +402,23 @@ class TestSuiteResults:
     def speedtestnet(self):
         return SpeedtestNetResult.factory(self.post())
     
-    def csv(self, headeronly=False):
+    def csv(self):
         fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
         buff = io.StringIO(newline='')
         f = csv.DictWriter(buff, fieldnames=fieldnames)
         f.writeheader()
-        if not headeronly:
-            f.writerow({
-                'Server ID': self.server.id,
-                'Sponsor': self.server.sponsor,
-                'Server Name': self.server.name,
-                'Timestamp': self.timestamp,
-                'Distance': self.server.distance,
-                'Ping': self.server.latency,
-                'Download': self.download.speed,
-                'Upload': self.upload.speed,
-                'Share': '', # self.speedtestnet.image
-                'IP Address': self.client.ipaddr
-                    })
+        f.writerow({
+            'Server ID': self.server.id,
+            'Sponsor': self.server.sponsor,
+            'Server Name': self.server.name,
+            'Timestamp': self.timestamp,
+            'Distance': self.server.distance,
+            'Ping': self.server.latency,
+            'Download': self.download.speed,
+            'Upload': self.upload.speed,
+            'Share': '', # self.speedtestnet.image
+            'IP Address': self.client.ipaddr
+                })
         return buff.getvalue()
     
     def json(self):
@@ -633,6 +648,14 @@ class Server(object):
     def __repr__(self):
         return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f}>'.format(self.id, self.name, self.country, self.cc, self.url, self.host, self.sponsor, self.point, self.distance)
     
+    def __str__(self):
+        return '{id:5d}) {sponsor} ({name}, {country}) [{distance:.2f}km]'.format(
+            id=self.id,
+            sponsor=self.sponsor,
+            name=self.name,
+            country=self.country,
+            distance=self.distance)
+    
     def __iter__(self):
         return iter({
             'id': self.id,
@@ -673,7 +696,7 @@ class Server(object):
                     raise HttpRetrievalError()
                 latencies.append(latency)
                 logger.debug('{!s} GET {} => {} {!s}'.format(request_url, request_path, response.status, latencies))
-            except (HTTPError, URLError, socket.error, ssl.SSLError, ssl.CertificateError, BadStatusLine, HttpRetrievalError) as e:
+            except (urllib.error.HTTPError, urllib.error.URLError, socket.error, ssl.SSLError, ssl.CertificateError, http.client.BadStatusLine, HttpRetrievalError) as e:
                 logger.error(e)
                 latencies.append(3600.0)
             finally:
@@ -683,7 +706,7 @@ class Server(object):
         return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
     ping=latency
     
-    def download(self):
+    def do_download(self):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
@@ -712,7 +735,12 @@ class Server(object):
         terminated.set()
         return results
         
-    def upload(self):
+    def do_upload(self):
+        def get_http_upload_data_cls(preallocate=True):
+            return [
+                HTTPUploadData0,
+                HTTPUploadData][bool(preallocate)]
+        
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
@@ -742,6 +770,16 @@ class Server(object):
             results.append(resultq.get())
         terminated.set()
         return results
+
+    @property
+    @memoized
+    def download(self):
+        return self.do_download()
+
+    @property
+    @memoized
+    def upload(self):
+        return self.do_upload()
 
 class MiniServer(Server):
     def __init__(self, testsuite):
@@ -785,8 +823,9 @@ class NullServer(Server):
         return 0.0
 
 class Servers(object):
-    def __init__(self, testsuite):
+    def __init__(self, testsuite, excludes=[]):
         self.testsuite = testsuite
+        self.excludes = excludes
 
     @property
     @memoized
@@ -802,10 +841,33 @@ class Servers(object):
             root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}).decode('utf-8'))
             for element in root.getElementsByTagName('server'):
                 server = Server.fromElement(self.testsuite, element)
-                if server.id in self.testsuite.config.params['ignore_servers']:
+                if server.id in self.testsuite.config.params['ignore_servers'] + self.excludes:
                     continue
                 servers.append(server)
         return servers
+    
+    def __iter__(self):
+        self._iter_index = 0
+        return self
+    
+    def __next__(self):
+        if self._iter_index < len(self.servers):
+            result = self.servers[self._iter_index]
+            self._iter_index += 1
+            return result
+        raise StopIteration()
+    
+    def findById(self, id):
+        for server in self.servers:
+            if server.id == id:
+                return server
+        raise Exception('Not Found')
+    
+    def findByUrl(self, url):
+        for server in self.servers:
+            if server.url == url:
+                return server
+        raise Exception('Not Found')
                 
     def get_closest_servers(self, limit=5):
         def sort_by_distance(servers):
@@ -813,8 +875,9 @@ class Servers(object):
         return sort_by_distance(self.servers)[:limit]
 
 class TestSuite(object):
-    def __init__(self):
+    def __init__(self, option):
         self.config = Config()
+        self.option = option
         
     @property
     def client(self):
@@ -823,7 +886,7 @@ class TestSuite(object):
     @property
     @memoized
     def servers(self):
-        return Servers(self)
+        return Servers(self, excludes=self.option.args.exclude)
     
     def get_best_server(self):
         def sort_by_latency(servers):
@@ -834,25 +897,48 @@ class TestSuite(object):
     @memoized
     def server(self):
         return self.get_best_server()
+    
+    def do_download(self):
+        return self.server.do_download()
 
+    def do_upload(self):
+        return self.server.do_upload()
+
+    @property
+    @memoized
     def download(self):
-        return self.server.download()
+        return self.server.do_download()
 
+    @property
+    @memoized
     def upload(self):
-        return self.server.upload()
+        return self.server.do_upload()
     
     @property
     @memoized
     def results(self):
-        return TestSuiteResults(self, self.download(), self.upload())
+        return TestSuiteResults(self, self.server.do_download(), self.server.do_upload())
+
+class NullOption(object):
+    @dataclasses.dataclass
+    class Namespace:
+        exclude: list = dataclasses.field(default_factory=list)
+        pre_allocate: bool = True
+        single: bool = False
+        timeout: float = 10.0
+    
+    @property
+    def args(self):
+        return self.Namespace()
 
 def main():
     logger.setLevel(logging.DEBUG)
-    t = TestSuite()
+    t = TestSuite(option=NullOption())
     print('== Selected Server')
     print(t.server)
     print('{}km'.format(t.server.distance))
     print('{}pt'.format(t.server.latency))
+    print('{}ms'.format(t.server.ping))
     print('== Download Results')
     for size, elapsed in t.results.download.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8/elapsed)))
