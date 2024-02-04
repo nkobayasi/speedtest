@@ -947,9 +947,6 @@ def main():
     for size, elapsed in t.results.upload.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8/elapsed)))
     print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(t.results.upload.total_size), t.results.upload.total_elapsed, units.Bandwidth(t.results.upload.speed)))
-    r = t.results.download
-    print(r.results, r.total_size)
-    r = r + r
     print(r.results, r.total_size)
     print(t.results.json())
     print(t.results.csv())
