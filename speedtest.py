@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 from functools import wraps
-from dataclasses import dataclass
+import dataclasses
 import io
 import os
 import math
@@ -20,6 +20,7 @@ import multiprocessing
 import http.client
 import urllib.request
 import urllib.parse
+import urllib.error
 import xml.dom
 import xml.dom.minidom
 import logging
@@ -63,7 +64,7 @@ class FileHandler(logging.handlers.WatchedFileHandler):
         super().__init__(filename, encoding='utf-8')
         self.setFormatter(logging.Formatter('[%(asctime)s] [%(process)d] %(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
 
-logger = logging.getLogger('ping').getChild(__name__)
+logger = logging.getLogger('speedtest').getChild(__name__)
 logger.addHandler(StderrHandler())
 
 class HttpRetrievalError(Exception): pass
@@ -647,6 +648,14 @@ class Server(object):
     def __repr__(self):
         return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f}>'.format(self.id, self.name, self.country, self.cc, self.url, self.host, self.sponsor, self.point, self.distance)
     
+    def __str__(self):
+        return '{id:5d}) {sponsor} ({name}, {country}) [{distance:.2f}km]'.format(
+            id=self.id,
+            sponsor=self.sponsor,
+            name=self.name,
+            country=self.country,
+            distance=self.distance)
+    
     def __iter__(self):
         return iter({
             'id': self.id,
@@ -687,7 +696,7 @@ class Server(object):
                     raise HttpRetrievalError()
                 latencies.append(latency)
                 logger.debug('{!s} GET {} => {} {!s}'.format(request_url, request_path, response.status, latencies))
-            except (HTTPError, URLError, socket.error, ssl.SSLError, ssl.CertificateError, BadStatusLine, HttpRetrievalError) as e:
+            except (urllib.error.HTTPError, urllib.error.URLError, socket.error, ssl.SSLError, ssl.CertificateError, http.client.BadStatusLine, HttpRetrievalError) as e:
                 logger.error(e)
                 latencies.append(3600.0)
             finally:
@@ -727,7 +736,7 @@ class Server(object):
         return results
         
     def do_upload(self):
-        def http_upload_data_cls(preallocate=True):
+        def get_http_upload_data_cls(preallocate=True):
             return [
                 HTTPUploadData0,
                 HTTPUploadData][bool(preallocate)]
@@ -866,8 +875,9 @@ class Servers(object):
         return sort_by_distance(self.servers)[:limit]
 
 class TestSuite(object):
-    def __init__(self):
+    def __init__(self, option):
         self.config = Config()
+        self.option = option
         
     @property
     def client(self):
@@ -876,7 +886,7 @@ class TestSuite(object):
     @property
     @memoized
     def servers(self):
-        return Servers(self)
+        return Servers(self, excludes=self.option.args.exclude)
     
     def get_best_server(self):
         def sort_by_latency(servers):
@@ -909,13 +919,26 @@ class TestSuite(object):
     def results(self):
         return TestSuiteResults(self, self.server.do_download(), self.server.do_upload())
 
+class NullOption(object):
+    @dataclasses.dataclass
+    class Namespace:
+        exclude: list = dataclasses.field(default_factory=list)
+        pre_allocate: bool = True
+        single: bool = False
+        timeout: float = 10.0
+    
+    @property
+    def args(self):
+        return self.Namespace()
+
 def main():
     logger.setLevel(logging.DEBUG)
-    t = TestSuite()
+    t = TestSuite(option=NullOption())
     print('== Selected Server')
     print(t.server)
     print('{}km'.format(t.server.distance))
     print('{}pt'.format(t.server.latency))
+    print('{}ms'.format(t.server.ping))
     print('== Download Results')
     for size, elapsed in t.results.download.histgram.items():
         print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8/elapsed)))

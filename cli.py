@@ -1,27 +1,31 @@
 #!/usr/local/bin/python3
 # encoding: utf-8
 
-from functools import wraps
 import sys
 import argparse
 import speedtest
+import logging
+import logging.handlers
 
 import units
 
-def memoized(func):
-    @wraps(func)
-    def closure(*args, **kwargs):
-        cls = args[0]
-        attrname = '_memoized_{0}'.format(func.__name__)
-        if not hasattr(cls, attrname):
-            setattr(cls, attrname, func(*args, **kwargs))
-        return getattr(cls, attrname)
-    return closure
-cached=memoized
+class StderrHandler(logging.StreamHandler):
+    def __init__(self):
+        super().__init__()
+        self.setFormatter(logging.Formatter('[%(process)d] %(message)s'))
 
-def memoized_property(func):
-    return property(memoized(func))
-cached_property=memoized_property
+class SyslogHandler(logging.handlers.SysLogHandler):
+    def __init__(self, filename):
+        super().__init__()
+        self.setFormatter(logging.Formatter('%(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
+
+class FileHandler(logging.handlers.WatchedFileHandler):
+    def __init__(self, filename):
+        super().__init__(filename, encoding='utf-8')
+        self.setFormatter(logging.Formatter('[%(asctime)s] [%(process)d] %(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
+
+logger = logging.getLogger('speedtest-cli').getChild(__name__)
+logger.addHandler(StderrHandler())
 
 class Option(object):
     def __init__(self):
@@ -49,28 +53,21 @@ class Option(object):
         parser.add_argument('--timeout', default=10.0, type=float, help='HTTP timeout in seconds. Default %(default)s')
         parser.add_argument('--secure', action='store_true', help='Use HTTPS instead of HTTP when communicating with speedtest.net operated servers')
         parser.add_argument('--no-pre-allocate', action='store_false', dest='pre_allocate', help='Do not pre allocate upload data. Pre allocation is enabled by default to improve upload performance. To support systems with insufficient memory, use this option to avoid a MemoryError')
-        parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS, default=argparse.SUPPRESS)
+        parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS)
         self.args = parser.parse_args(['--exclude', '62217', '--exclude', '8407'])
-        print(self.args)
-
-class TestSuite(speedtest.TestSuite):
-    def __init__(self, option):
-        super().__init__()
-        self.option = option
-
-    @property
-    @memoized
-    def servers(self):
-        return speedtest.Servers(self, excludes=self.option.args.exclude)
+        logger.debug(self.args)
 
 def main():
+    logger.setLevel(logging.DEBUG)
     option = Option()
     if option.args.version:
         print('%s %s' % (option.prog, speedtest.__version__, ))
         print('Python %s' % (sys.version.strip(), ))
         return
+    if option.args.debug:
+        logging.getLogger('speedtest').setLevel(logging.DEBUG)
 
-    testsuite = TestSuite(option=option)
+    testsuite = speedtest.TestSuite(option=option)
     if option.args.list:
         for server in sorted(testsuite.servers, key=lambda server: server.distance):
             print('%(id)5d) %(sponsor)s (%(name)s, %(country)s) [%(distance)0.2fkm]' % {
