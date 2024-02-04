@@ -84,39 +84,30 @@ def main():
             download += server.download
             upload += server.upload
         print('Download: %s%s/s\nUpload: %s%s/s' % (
-            units.Bandwidth(download.speed) / option.args.units[1],
-            option.args.units[0],
-            units.Bandwidth(upload.speed) / option.args.units[1],
-            option.args.units[0], ))
+            units.Bandwidth(download.speed) / option.args.units[1], option.args.units[0],
+            units.Bandwidth(upload.speed) / option.args.units[1], option.args.units[0], ))
         return
     if option.args.mini:
         server = speedtest.MiniServer(testsuite, url=option.args.mini)
-        print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
-            server.latency,
-            units.Bandwidth(server.download.speed) / option.args.units[1],
-            option.args.units[0],
-            units.Bandwidth(server.upload.speed) / option.args.units[1],
-            option.args.units[0], ))
+        print('Download: %s%s/s\nUpload: %s%s/s' % (
+            units.Bandwidth(server.download.speed) / option.args.units[1], option.args.units[0],
+            units.Bandwidth(server.upload.speed) / option.args.units[1], option.args.units[0], ))
         return
     
     print(testsuite.server)
     
     if option.args.download:
         print('Download: %s%s/s' % (
-            units.Bandwidth(testsuite.server.download.speed) / option.args.units[1],
-            option.args.units[0], ))
+            units.Bandwidth(testsuite.server.download.speed) / option.args.units[1], option.args.units[0], ))
     if option.args.upload:
         print('Upload: %s%s/s' % (
-            units.Bandwidth(testsuite.server.upload.speed) / option.args.units[1],
-            option.args.units[0], ))
+            units.Bandwidth(testsuite.server.upload.speed) / option.args.units[1], option.args.units[0], ))
 
     if option.args.simple:
         print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
             testsuite.results.server.latency,
-            units.Bandwidth(testsuite.results.download.speed) / option.args.units[1],
-            option.args.units[0],
-            units.Bandwidth(testsuite.results.upload.speed) / option.args.units[1],
-            option.args.units[0], ))
+            units.Bandwidth(testsuite.results.download.speed) / option.args.units[1], option.args.units[0],
+            units.Bandwidth(testsuite.results.upload.speed) / option.args.units[1], option.args.units[0], ))
     elif option.args.csv:
         print(testsuite.results.csv())
     elif option.args.json:
