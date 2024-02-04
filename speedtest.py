@@ -467,8 +467,8 @@ class HTTPUploadData0(object):
             self.curr = self.size + offset
         if self.curr < 0:
             self.curr = 0
-        if self.size < self.curr:
-            self.curr = self.size
+        if self._size < self.curr:
+            self.curr = self._size
 
     def tell(self):
         return self.curr
