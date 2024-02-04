@@ -311,7 +311,7 @@ class Results(object):
     
     @property
     def speed(self):
-        return float(self.total_bits) / self.total_elapsed
+        return self.total_bits / self.total_elapsed
 
 class UploadResults(Results):
     pass
@@ -437,7 +437,7 @@ class HTTPUploadData(io.BytesIO):
         super().__init__()
         chars = b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         self.write(b'content1=')
-        for _ in range(int(round(float(size) / len(chars))) + 1):
+        for _ in range(size // len(chars) + 1):
             self.write(chars)
         self.truncate(size)
         self.seek(0, os.SEEK_SET)
@@ -827,11 +827,11 @@ def main():
     print('{}pt'.format(t.server.latency))
     print('== Download Results')
     for size, elapsed in t.results.download.histgram.items():
-        print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8.0/elapsed)))
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8/elapsed)))
     print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(t.results.download.total_size), t.results.download.total_elapsed, units.Bandwidth(t.results.download.speed)))
     print('== Upload Results')
     for size, elapsed in t.results.upload.histgram.items():
-        print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8.0/elapsed)))
+        print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(size), elapsed, units.Bandwidth(size*8/elapsed)))
     print('{!s}B / {:.1f}s => {!s}bps'.format(units.Size(t.results.upload.total_size), t.results.upload.total_elapsed, units.Bandwidth(t.results.upload.speed)))
     r = t.results.download
     print(r.results, r.total_size)
