@@ -727,6 +727,11 @@ class Server(object):
         return results
         
     def do_upload(self):
+        def http_upload_data_cls(preallocate=True):
+            return [
+                HTTPUploadData0,
+                HTTPUploadData][bool(preallocate)]
+        
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
