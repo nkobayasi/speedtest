@@ -723,8 +723,9 @@ class NullServer(Server):
         return 0.0
 
 class Servers(object):
-    def __init__(self, testsuite):
+    def __init__(self, testsuite, excludes=[]):
         self.testsuite = testsuite
+        self.excludes = excludes
 
     @property
     @memoized
@@ -740,7 +741,7 @@ class Servers(object):
             root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}).decode('utf-8'))
             for element in root.getElementsByTagName('server'):
                 server = Server.fromElement(self.testsuite, element)
-                if server.id in self.testsuite.config.params['ignore_servers']:
+                if server.id in self.testsuite.config.params['ignore_servers'] + self.excludes:
                     continue
                 servers.append(server)
         return servers

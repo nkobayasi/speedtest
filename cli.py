@@ -1,11 +1,27 @@
 #!/usr/local/bin/python3
 # encoding: utf-8
 
+from functools import wraps
 import sys
 import argparse
 import speedtest
 
 import units
+
+def memoized(func):
+    @wraps(func)
+    def closure(*args, **kwargs):
+        cls = args[0]
+        attrname = '_memoized_{0}'.format(func.__name__)
+        if not hasattr(cls, attrname):
+            setattr(cls, attrname, func(*args, **kwargs))
+        return getattr(cls, attrname)
+    return closure
+cached=memoized
+
+def memoized_property(func):
+    return property(memoized(func))
+cached_property=memoized_property
 
 class Option(object):
     def __init__(self):
@@ -26,16 +42,26 @@ class Option(object):
         parser.add_argument('--csv', action='store_true', help='Suppress verbose output, only show basic information in CSV format. Speeds listed in bit/s and not affected by --bytes')
         parser.add_argument('--json', action='store_true', help='Suppress verbose output, only show basic information in JSON format. Speeds listed in bit/s and not affected by --bytes')
         parser.add_argument('--list', action='store_true', help='Display a list of speedtest.net servers sorted by distance')
-        parser.add_argument('--server', action='append', type=int, help='Specify a server ID to test against. Can be supplied multiple times')
-        parser.add_argument('--exclude', action='append', type=int, help='Exclude a server from selection. Can be supplied multiple times')
+        parser.add_argument('--server', action='append', type=int, default=[], help='Specify a server ID to test against. Can be supplied multiple times')
+        parser.add_argument('--exclude', action='append', type=int, default=[], help='Exclude a server from selection. Can be supplied multiple times')
         parser.add_argument('--mini', help='URL of the Speedtest Mini server')
         parser.add_argument('--source', help='Source IP address to bind to')
         parser.add_argument('--timeout', default=10.0, type=float, help='HTTP timeout in seconds. Default %(default)s')
         parser.add_argument('--secure', action='store_true', help='Use HTTPS instead of HTTP when communicating with speedtest.net operated servers')
         parser.add_argument('--no-pre-allocate', action='store_false', dest='pre_allocate', help='Do not pre allocate upload data. Pre allocation is enabled by default to improve upload performance. To support systems with insufficient memory, use this option to avoid a MemoryError')
         parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS, default=argparse.SUPPRESS)
-        self.args = parser.parse_args([])
+        self.args = parser.parse_args(['--exclude', '62217', '--exclude', '8407'])
         print(self.args)
+
+class TestSuite(speedtest.TestSuite):
+    def __init__(self, option):
+        super().__init__()
+        self.option = option
+
+    @property
+    @memoized
+    def servers(self):
+        return speedtest.Servers(self, excludes=self.option.args.exclude)
 
 def main():
     option = Option()
@@ -44,7 +70,7 @@ def main():
         print('Python %s' % (sys.version.strip(), ))
         return
 
-    testsuite = speedtest.TestSuite()
+    testsuite = TestSuite(option=option)
     if option.args.list:
         for server in sorted(testsuite.servers, key=lambda server: server.distance):
             print('%(id)5d) %(sponsor)s (%(name)s, %(country)s) [%(distance)0.2fkm]' % {
@@ -75,6 +101,9 @@ def main():
             units.Bandwidth(server.upload.speed) / option.args.units[1],
             option.args.units[0], ))
         return
+    
+    print(testsuite.server)
+    
     if option.args.download:
         print('Download: %s%s/s' % (
             units.Bandwidth(testsuite.server.download.speed) / option.args.units[1],
@@ -83,6 +112,7 @@ def main():
         print('Upload: %s%s/s' % (
             units.Bandwidth(testsuite.server.upload.speed) / option.args.units[1],
             option.args.units[0], ))
+
     if option.args.simple:
         print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
             testsuite.results.server.latency,
