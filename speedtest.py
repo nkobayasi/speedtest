@@ -104,7 +104,7 @@ class HttpClient(object):
                 'Cache-Control': 'no-cache', }, headers))
         logger.debug(request.full_url)
         with urllib.request.urlopen(request) as f:
-            return f.read()
+            return f.read().decode('utf-8')
 
     def post(self, url, params={}, headers={}):
         data = urllib.parse.urlencode(params).encode('ascii')
@@ -117,7 +117,7 @@ class HttpClient(object):
             data=data)
         logger.debug('{} {} {}'.format(request.full_url, request.header_items(), request.data))
         with urllib.request.urlopen(request) as f:
-            return f.read()
+            return f.read().decode('utf-8')
 
 class Point(object):
     def __init__(self, latitude, longitude):
@@ -207,7 +207,7 @@ class Client(object):
 class Config(object):
     def __init__(self):
         http = HttpClient()
-        root = xml.dom.minidom.parseString(http.get('https://www.speedtest.net/speedtest-config.php').decode('utf-8'))
+        root = xml.dom.minidom.parseString(http.get('https://www.speedtest.net/speedtest-config.php'))
         settings = {
             'licensekey': root.getElementsByTagName('licensekey')[0].firstChild.data,
             'customer': root.getElementsByTagName('customer')[0].firstChild.data}
@@ -390,7 +390,7 @@ class TestSuiteResults:
                 'bytesreceived': self.download.total_size,
                 'bytessent': self.upload.total_size,
                 'serverid': self.server.id,
-                    }).decode('utf-8')
+                    })
         params = urllib.parse.parse_qs(response)
         logger.debug('{} {}'.format(response, params))
         return {
@@ -802,12 +802,12 @@ class MiniServer(Server):
         logger.debug(request_url)
         
         client = HttpClient()
-        response = client.get(request_url).decode('utf-8')
+        response = client.get(request_url)
         extensions = re.findall(r'upload_?[Ee]xtension: "([^"]+)"', response)
         if not extensions:
             for ext in ('php', 'asp', 'aspx', 'jsp'):
                 try:
-                    response = client.get(request_url + '/speedtest/upload.%s' % (ext, )).decode('utf-8')
+                    response = client.get(request_url + '/speedtest/upload.%s' % (ext, ))
                     if count_lines(response) == 1 and re.match(r'size=[0-9]', response):
                         extensions = [ext]
                         break
@@ -872,7 +872,7 @@ class Servers(object):
             'https://www.speedtest.net/speedtest-servers.php',
             'http://c.speedtest.net/speedtest-servers.php', ]
         for url in urls:
-            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}).decode('utf-8'))
+            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}))
             for element in root.getElementsByTagName('server'):
                 server = Server.fromElement(self.testsuite, element)
                 if server.id in self.testsuite.config.params['ignore_servers'] + self.excludes:
