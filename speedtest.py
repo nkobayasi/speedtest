@@ -186,11 +186,7 @@ class Client(object):
             cc=element.getAttribute('country'),
             point=Point(latitude=element.getAttribute('lat'), longitude=element.getAttribute('lon')),
             rating=element.getAttribute('rating'),
-            isp=ISP(
-                name=element.getAttribute('isp'),
-                rating=element.getAttribute('isprating'),
-                avg_down=element.getAttribute('ispdlavg'),
-                avg_up=element.getAttribute('ispulavg')))
+            isp=ISP.fromElement(element))
         return self
         
     def __repr__(self):
