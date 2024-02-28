@@ -19,6 +19,7 @@ import ssl
 import queue
 import threading
 import multiprocessing
+import socket
 import http.client
 import urllib.request
 import urllib.parse
