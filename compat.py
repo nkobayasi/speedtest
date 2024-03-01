@@ -8,14 +8,14 @@ import socket
 import http.client
 import urllib.request
 
-def create_connection(address, timeout=_GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+def create_connection(address, timeout=None, source_address=None):
     host, port = address
     for addrinfo in socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM):
         addrfamily, socktype, proto, canonname, sockaddr = addrinfo
         sock = None
         try:
             sock = socket.socket(addrfamily, socktype, proto)
-            if timeout != _GLOBAL_DEFAULT_TIMEOUT:
+            if timeout:
                 sock.settimeout(float(timeout))
             if source_address:
                 sock.bind(source_address)
