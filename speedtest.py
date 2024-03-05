@@ -4,6 +4,7 @@
 from functools import wraps
 import dataclasses
 import re
+import random
 import io
 import os
 import os.path
@@ -717,16 +718,14 @@ class Server(object):
             for _ in range(self.testsuite.config.params['download']['counts']):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
-        i = 0
         for request_path in request_paths:
-            request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, i, )})),
+            request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, random.randint(0, 0xffff), )})),
                 method='GET',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache', })
             logger.debug(request.full_url)
             requestq.put(request)
-            i += 1
         
         results = DownloadResults()
         for _ in range(len(request_paths)):
