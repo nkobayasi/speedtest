@@ -853,9 +853,8 @@ class NullServer(Server):
         return 0.0
 
 class Servers(object):
-    def __init__(self, testsuite, excludes=[]):
+    def __init__(self, testsuite):
         self.testsuite = testsuite
-        self.excludes = excludes
 
     @property
     @memoized
@@ -871,7 +870,7 @@ class Servers(object):
             root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}))
             for element in root.getElementsByTagName('server'):
                 server = Server.fromElement(self.testsuite, element)
-                if server.id in self.testsuite.config.params['ignore_servers'] + self.excludes:
+                if server.id in self.testsuite.config.params['ignore_servers'] + self.testsuite.option.args.exclude:
                     continue
                 servers.append(server)
         return servers
@@ -916,7 +915,7 @@ class TestSuite(object):
     @property
     @memoized
     def servers(self):
-        return Servers(self, excludes=self.option.args.exclude)
+        return Servers(self)
     
     def get_best_server(self):
         def sort_by_latency(servers):
