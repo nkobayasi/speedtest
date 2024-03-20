@@ -4,6 +4,7 @@
 from functools import wraps
 import dataclasses
 import re
+import random
 import io
 import os
 import os.path
@@ -19,6 +20,7 @@ import ssl
 import queue
 import threading
 import multiprocessing
+import socket
 import http.client
 import urllib.request
 import urllib.parse
@@ -50,6 +52,20 @@ cached_property=memoized_property
 def merge_dict(value, other={}):
     value.update(other)
     return value
+
+def create_counter():
+    n = 0
+    def _counter():
+        nonlocal n
+        n += 1
+        return n
+    return _counter
+gcounter = create_counter()
+
+def get_anticache_url(url):
+    parts = urllib.parse.urlparse(url)
+    params = merge_dict(urllib.parse.parse_qs(parts.query), {'x': '%.1f%d' % (time.time() * 1000.0, gcounter(), )})
+    return urllib.parse.urlunparse(parts._replace(query=urllib.parse.urlencode(params, doseq=True)))
 
 class StderrHandler(logging.StreamHandler):
     def __init__(self):
@@ -104,7 +120,7 @@ class HttpClient(object):
                 'Cache-Control': 'no-cache', }, headers))
         logger.debug(request.full_url)
         with urllib.request.urlopen(request) as f:
-            return f.read()
+            return f.read().decode('utf-8')
 
     def post(self, url, params={}, headers={}):
         data = urllib.parse.urlencode(params).encode('ascii')
@@ -117,7 +133,7 @@ class HttpClient(object):
             data=data)
         logger.debug('{} {} {}'.format(request.full_url, request.header_items(), request.data))
         with urllib.request.urlopen(request) as f:
-            return f.read()
+            return f.read().decode('utf-8')
 
 class Point(object):
     def __init__(self, latitude, longitude):
@@ -186,11 +202,7 @@ class Client(object):
             cc=element.getAttribute('country'),
             point=Point(latitude=element.getAttribute('lat'), longitude=element.getAttribute('lon')),
             rating=element.getAttribute('rating'),
-            isp=ISP(
-                name=element.getAttribute('isp'),
-                rating=element.getAttribute('isprating'),
-                avg_down=element.getAttribute('ispdlavg'),
-                avg_up=element.getAttribute('ispulavg')))
+            isp=ISP.fromElement(element))
         return self
         
     def __repr__(self):
@@ -207,7 +219,7 @@ class Client(object):
 class Config(object):
     def __init__(self):
         http = HttpClient()
-        root = xml.dom.minidom.parseString(http.get('https://www.speedtest.net/speedtest-config.php').decode('utf-8'))
+        root = xml.dom.minidom.parseString(http.get('https://www.speedtest.net/speedtest-config.php'))
         settings = {
             'licensekey': root.getElementsByTagName('licensekey')[0].firstChild.data,
             'customer': root.getElementsByTagName('customer')[0].firstChild.data}
@@ -390,7 +402,7 @@ class TestSuiteResults:
                 'bytesreceived': self.download.total_size,
                 'bytessent': self.upload.total_size,
                 'serverid': self.server.id,
-                    }).decode('utf-8')
+                    })
         params = urllib.parse.parse_qs(response)
         logger.debug('{} {}'.format(response, params))
         return {
@@ -684,7 +696,7 @@ class Server(object):
 
         latencies = []
         for _ in range(3):
-            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, _, )}), )), allow_fragments=False)
+            request_url = urllib.parse.urlparse(get_anticache_url(urllib.parse.urljoin(self.url, '/latency.txt')), allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
@@ -720,16 +732,14 @@ class Server(object):
             for _ in range(self.testsuite.config.params['download']['counts']):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
-        i = 0
         for request_path in request_paths:
-            request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, i, )})),
+            request = urllib.request.Request(get_anticache_url(urllib.parse.urljoin(self.url, request_path)),
                 method='GET',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache', })
             logger.debug(request.full_url)
             requestq.put(request)
-            i += 1
         
         results = DownloadResults()
         for _ in range(len(request_paths)):
@@ -756,7 +766,7 @@ class Server(object):
 
         for size in sizes:
             data = HTTPUploadData(size=size)
-            request = urllib.request.Request(self.url,
+            request = urllib.request.Request(get_anticache_url(self.url),
                 method='POST',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
@@ -802,12 +812,12 @@ class MiniServer(Server):
         logger.debug(request_url)
         
         client = HttpClient()
-        response = client.get(request_url).decode('utf-8')
+        response = client.get(request_url)
         extensions = re.findall(r'upload_?[Ee]xtension: "([^"]+)"', response)
         if not extensions:
             for ext in ('php', 'asp', 'aspx', 'jsp'):
                 try:
-                    response = client.get(request_url + '/speedtest/upload.%s' % (ext, )).decode('utf-8')
+                    response = client.get(request_url + '/speedtest/upload.%s' % (ext, ))
                     if count_lines(response) == 1 and re.match(r'size=[0-9]', response):
                         extensions = [ext]
                         break
@@ -857,9 +867,8 @@ class NullServer(Server):
         return 0.0
 
 class Servers(object):
-    def __init__(self, testsuite, excludes=[]):
+    def __init__(self, testsuite):
         self.testsuite = testsuite
-        self.excludes = excludes
 
     @property
     @memoized
@@ -872,10 +881,10 @@ class Servers(object):
             'https://www.speedtest.net/speedtest-servers.php',
             'http://c.speedtest.net/speedtest-servers.php', ]
         for url in urls:
-            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}).decode('utf-8'))
+            root = xml.dom.minidom.parseString(http.get(url, params={'threads': self.testsuite.config.params['download']['threads']}))
             for element in root.getElementsByTagName('server'):
                 server = Server.fromElement(self.testsuite, element)
-                if server.id in self.testsuite.config.params['ignore_servers'] + self.excludes:
+                if server.id in self.testsuite.config.params['ignore_servers'] + self.testsuite.option.args.exclude:
                     continue
                 servers.append(server)
         return servers
@@ -920,7 +929,7 @@ class TestSuite(object):
     @property
     @memoized
     def servers(self):
-        return Servers(self, excludes=self.option.args.exclude)
+        return Servers(self)
     
     def get_best_server(self):
         def sort_by_latency(servers):
