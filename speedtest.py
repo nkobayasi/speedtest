@@ -53,6 +53,20 @@ def merge_dict(value, other={}):
     value.update(other)
     return value
 
+def create_counter():
+    n = 0
+    def _counter():
+        nonlocal n
+        n += 1
+        return n
+    return _counter
+gcounter = create_counter()
+
+def get_anticache_url(url):
+    parts = urllib.parse.urlparse(url)
+    params = merge_dict(urllib.parse.parse_qs(parts.query), {'x': '%.1f%d' % (time.time() * 1000.0, gcounter(), )})
+    return urllib.parse.urlunparse(parts._replace(query=urllib.parse.urlencode(params, doseq=True)))
+
 class StderrHandler(logging.StreamHandler):
     def __init__(self):
         super().__init__()
@@ -682,7 +696,7 @@ class Server(object):
 
         latencies = []
         for _ in range(3):
-            request_url = urllib.parse.urlparse(urllib.parse.urljoin(self.url, '/latency.txt?%s' % (urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, _, )}), )), allow_fragments=False)
+            request_url = urllib.parse.urlparse(get_anticache_url(urllib.parse.urljoin(self.url, '/latency.txt')), allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
@@ -719,7 +733,7 @@ class Server(object):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
         for request_path in request_paths:
-            request = urllib.request.Request(urllib.parse.urljoin(self.url, request_path + '?' + urllib.parse.urlencode({'x': '%.0f.%d' % (time.time() * 1000.0, random.randint(0, 0xffff), )})),
+            request = urllib.request.Request(get_anticache_url(urllib.parse.urljoin(self.url, request_path)),
                 method='GET',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
@@ -752,7 +766,7 @@ class Server(object):
 
         for size in sizes:
             data = HTTPUploadData(size=size)
-            request = urllib.request.Request(self.url,
+            request = urllib.request.Request(get_anticache_url(self.url),
                 method='POST',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
