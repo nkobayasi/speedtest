@@ -596,9 +596,9 @@ class HTTPDownloader(threading.Thread, HttpClient):
                 request.add_header('User-Agent', self.user_agent)
                 start = time.time()
                 with urllib.request.urlopen(request) as f:
-                    f.read()
+                    data = f.read()
                     finish = time.time()
-                    size = int(f.headers['Content-Length'])
+                    size = int(f.headers.get('Content-Length', len(data)))
                 self.resultq.put({'size': size, 'elapsed': finish - start, })
             except queue.Empty:
                 pass
@@ -622,7 +622,7 @@ class HTTPCancelableDownloader(HTTPDownloader):
                         if len(data) < chunksize:
                             break
                     finish = time.time()
-                    size = int(f.headers['Content-Length'])
+                    size = int(f.headers.get('Content-Length', len(data)))
                 if total < size:
                     raise Exception()
                 self.resultq.put({'size': size, 'elapsed': finish - start, })
