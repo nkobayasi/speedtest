@@ -461,6 +461,10 @@ class HTTPUploadData(io.BytesIO):
     @property
     def size(self):
         return self._size
+    
+    @property
+    def mime_type(self):
+        return 'application/x-www-form-urlencoded'
 
 class HTTPUploadData0(object):
     def __init__(self, size):
@@ -474,6 +478,10 @@ class HTTPUploadData0(object):
     @property
     def size(self):
         return self._size
+
+    @property
+    def mime_type(self):
+        return 'application/x-www-form-urlencoded'
 
     def close(self):
         self.closed = True
@@ -771,7 +779,7 @@ class Server(object):
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                     'Cache-Control': 'no-cache',
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': data.mime_type,
                     'Content-Length': data.size, },
                 data=data)
             logger.debug(request.full_url)
