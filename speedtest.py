@@ -728,11 +728,11 @@ class Server(object):
         return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
     ping=latency
     
-    def do_download(self):
+    def do_download(self, threads=2):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
-        for _ in range(2):
+        for _ in range(threads):
             HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
         
         request_paths = []
@@ -755,7 +755,7 @@ class Server(object):
         terminated.set()
         return results
         
-    def do_upload(self):
+    def do_upload(self, threads=2):
         def get_http_upload_data_cls(preallocate=True):
             return [
                 HTTPUploadData0,
@@ -764,7 +764,7 @@ class Server(object):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
-        for _ in range(2):
+        for _ in range(threads):
             HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated).start()
         
         sizes = []
