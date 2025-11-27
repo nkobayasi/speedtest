@@ -54,7 +54,7 @@ class Option(object):
         parser.add_argument('--secure', action='store_true', help='Use HTTPS instead of HTTP when communicating with speedtest.net operated servers')
         parser.add_argument('--no-pre-allocate', action='store_false', dest='pre_allocate', help='Do not pre allocate upload data. Pre allocation is enabled by default to improve upload performance. To support systems with insufficient memory, use this option to avoid a MemoryError')
         parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS)
-        self.args = parser.parse_args(['--exclude', '62217', '--exclude', '8407'])
+        self.args = parser.parse_args()
         logger.debug(self.args)
 
 def main():
