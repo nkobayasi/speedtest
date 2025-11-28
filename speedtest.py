@@ -119,7 +119,10 @@ class URL(object):
     
     @property
     def port(self):
-        return self.parse.port
+        port_matrix = {
+            'http': 80,
+            'https': 443, }
+        return self.parse.port or port_matrix[self.scheme]
     
     @property
     def value(self):
@@ -708,7 +711,7 @@ class Server(object):
         self.testsuite = testsuite
         self.id = int(id)
         self.name = name
-        self.url = url
+        self.url = URL(url)
         self.host = host
         self.country = country
         self.cc = cc
@@ -731,7 +734,7 @@ class Server(object):
         return self
         
     def __repr__(self):
-        return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f}>'.format(self.id, self.name, self.country, self.cc, self.url, self.host, self.sponsor, self.point, self.distance)
+        return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f},ipv4={},ipv6={}>'.format(self.id, self.name, self.country, self.cc, self.url.value, self.host, self.sponsor, self.point, self.distance, self.support_ipv4, self.support_ipv6)
     
     def __str__(self):
         return '{id}) {sponsor} ({name}, {country}) [{distance:.2f}km]'.format(
@@ -745,12 +748,21 @@ class Server(object):
         return iter({
             'id': self.id,
             'name': self.name,
-            'url': self.url,
+            'url': self.url.value,
             'host': self.host,
             'country': self.country,
             'cc': self.cc,
             'sponsor': self.sponsor,
             'location': dict(self.point)}.items())
+
+    
+    @property
+    def support_ipv4(self):
+        return self.url.can_resolve4()
+
+    @property
+    def support_ipv6(self):
+        return self.url.can_resolve6()
     
     @property
     @memoized
@@ -767,7 +779,7 @@ class Server(object):
 
         latencies = []
         for _ in range(3):
-            request_url = urllib.parse.urlparse(get_anticache_url(urllib.parse.urljoin(self.url, '/latency.txt')), allow_fragments=False)
+            request_url = urllib.parse.urlparse(self.url.join('/latency.txt').anticache, allow_fragments=False)
             request_path = '%s?%s' % (request_url.path, request_url.query, ) 
             try:
                 conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
@@ -804,7 +816,7 @@ class Server(object):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
         for request_path in request_paths:
-            request = urllib.request.Request(get_anticache_url(urllib.parse.urljoin(self.url, request_path)),
+            request = urllib.request.Request(self.url.join(request_path).anticache,
                 method='GET',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
@@ -837,7 +849,7 @@ class Server(object):
 
         for size in sizes:
             data = HTTPUploadData(size=size)
-            request = urllib.request.Request(get_anticache_url(self.url),
+            request = urllib.request.Request(self.url.anticache,
                 method='POST',
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
@@ -1056,8 +1068,7 @@ def main():
     print(u.addrinfo6)
     print(u.resolve4)
     print(u.resolve6)
-    return
-    
+        
     t = TestSuite(option=NullOption())
     print('== Selected Server')
     print(t.server)
