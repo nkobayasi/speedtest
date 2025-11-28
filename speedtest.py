@@ -89,13 +89,76 @@ class HttpRetrievalError(Exception): pass
 
 class URL(object):
     def __init__(self, url, secure=True):
-        self.full = urllib.parse.urljoin(('http://', 'https://')[bool(secure)], url)
+        self.url = urllib.parse.urljoin(('http://', 'https://')[bool(secure)], url)
     
     def __repr__(self):
-        return '<URL: {}>'.format(self.full)
+        return '<URL: {}>'.format(self.url)
         
     def __str__(self):
-        return self.full
+        return self.url
+    
+    def join(self, path):
+        return URL(urllib.parse.urljoin(self.url, path))
+    
+    @property
+    @memoized
+    def parse(self):
+        return urllib.parse.urlparse(self.url)
+    
+    @property
+    def scheme(self):
+        return self.parse.scheme
+    
+    @property
+    def netloc(self):
+        return self.parse.netloc
+    
+    @property
+    def hostname(self):
+        return self.parse.hostname
+    
+    @property
+    def port(self):
+        return self.parse.port
+    
+    @property
+    def value(self):
+        return self.url
+    
+    @property
+    def anticache(self):
+        return get_anticache_url(self.url)
+    
+    @property
+    @memoized
+    def addrinfo(self):
+        return socket.getaddrinfo(self.hostname, self.port, proto=socket.IPPROTO_TCP)
+    
+    def can_resolve4(self):
+        return any(map(lambda _: _[0] == socket.AF_INET, self.addrinfo))
+    
+    def can_resolve6(self):
+        return any(map(lambda _: _[0] == socket.AF_INET6, self.addrinfo))
+    
+    @property
+    def addrinfo4(self):
+        return list(filter(lambda _: _[0] == socket.AF_INET, self.addrinfo))
+
+    @property
+    def addrinfo6(self):
+        return list(filter(lambda _: _[0] == socket.AF_INET6, self.addrinfo))
+    
+    @property
+    def resolve4(self):
+        if not self.can_resolve4():
+            return
+        return self.addrinfo4[0][4][0]
+    
+    @property
+    def resolve6(self):
+        if not self.can_resolve6():
+            return
+        return self.addrinfo6[0][4][0]
     
 class HttpClient(object):
     @property
@@ -984,6 +1047,17 @@ class NullOption(object):
 
 def main():
     logger.setLevel(logging.DEBUG)
+    u = URL('https://www.yahoo.com')
+    print(u.port)
+    print(u.can_resolve4())
+    print(u.can_resolve6())
+    print(u.addrinfo)
+    print(u.addrinfo4)
+    print(u.addrinfo6)
+    print(u.resolve4)
+    print(u.resolve6)
+    return
+    
     t = TestSuite(option=NullOption())
     print('== Selected Server')
     print(t.server)
