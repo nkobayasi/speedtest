@@ -53,9 +53,10 @@ class Option(object):
         parser.add_argument('--timeout', action='store', default=10.0, type=float, help='HTTP timeout in seconds. Default %(default)s')
         parser.add_argument('--secure', action='store_true', help='Use HTTPS instead of HTTP when communicating with speedtest.net operated servers')
         parser.add_argument('--no-pre-allocate', action='store_false', dest='pre_allocate', help='Do not pre allocate upload data. Pre allocation is enabled by default to improve upload performance. To support systems with insufficient memory, use this option to avoid a MemoryError')
-        parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS)
+        parser.add_argument('-4', '--ipv4', action='store_true', help='Use IPv4')
+        parser.add_argument('-6', '--ipv6', action='store_true', help='Use IPv6')
+        parser.add_argument('-D', '--debug', action='store_true', help=argparse.SUPPRESS)
         self.args = parser.parse_args()
-        logger.debug(self.args)
 
 def main():
     logger.setLevel(logging.DEBUG)
@@ -66,6 +67,7 @@ def main():
         return
     if option.args.debug:
         logging.getLogger('speedtest').setLevel(logging.DEBUG)
+        logger.debug(option.args)
 
     testsuite = speedtest.TestSuite(option=option)
     if option.args.list:
