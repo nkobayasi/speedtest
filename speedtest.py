@@ -73,7 +73,7 @@ class StderrHandler(logging.StreamHandler):
         self.setFormatter(logging.Formatter('[%(process)d] %(message)s'))
 
 class SyslogHandler(logging.handlers.SysLogHandler):
-    def __init__(self, filename):
+    def __init__(self):
         super().__init__()
         self.setFormatter(logging.Formatter('%(levelname)s: %(name)s.%(funcName)s(): %(message)s'))
 
