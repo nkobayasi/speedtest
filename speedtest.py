@@ -657,8 +657,14 @@ class HTTPUploader(threading.Thread, HttpClient):
                 self.resultq.put({'size': 0, 'elapsed': -1, })
 
 class HTTPDownloader(threading.Thread, HttpClient):
-    def __init__(self, resultq, requestq, terminated):
+    def __init__(self, resultq, requestq, terminated, version='both'):
         super().__init__()
+        if version == 'ipv4':
+            self.opener = urllib.request.build_opener() #urllib.request.urlopen
+        elif version == 'ipv6':
+            self.opener = urllib.request.build_opener() #urllib.request.urlopen
+        else:
+            self.opener = urllib.request.build_opener() #urllib.request.urlopen
         self.requestq = requestq
         self.resultq = resultq
         self.terminated = terminated
@@ -803,7 +809,7 @@ class Server(object):
         return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
     ping=latency
     
-    def do_download(self, threads=2):
+    def do_download(self, threads=2, ip_version='both'):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
@@ -830,7 +836,7 @@ class Server(object):
         terminated.set()
         return results
         
-    def do_upload(self, threads=2):
+    def do_upload(self, threads=2, ip_version='both'):
         def get_http_upload_data_cls(preallocate=True):
             return [
                 HTTPUploadData0,
@@ -1012,7 +1018,12 @@ class TestSuite(object):
     @property
     @memoized
     def servers(self):
-        return Servers(self)
+        servers = Servers(self)
+        if self.ip_version == 'ipv4':
+            return list(filter(lambda server: server.support_ipv4, servers))
+        elif self.ip_version == 'ipv6':
+            return list(filter(lambda server: server.support_ipv6, servers))
+        return servers
     
     def get_best_server(self):
         def sort_by_latency(servers):
@@ -1020,30 +1031,38 @@ class TestSuite(object):
         return sort_by_latency(self.servers.get_closest_servers())[0]
     
     @property
+    def ip_version(self):
+        if self.option.args.ipv6 and not self.option.args.ipv4:
+            return 'ipv6'
+        elif self.option.args.ipv4 and not self.option.args.ipv6:
+            return 'ipv4'
+        return 'both'
+    
+    @property
     @memoized
     def server(self):
         return self.get_best_server()
     
     def do_download(self):
-        return self.server.do_download()
+        return self.server.do_download(ip_version=self.ip_version)
 
     def do_upload(self):
-        return self.server.do_upload()
+        return self.server.do_upload(ip_version=self.ip_version)
 
     @property
     @memoized
     def download(self):
-        return self.server.do_download()
+        return self.do_download()
 
     @property
     @memoized
     def upload(self):
-        return self.server.do_upload()
+        return self.do_upload()
     
     @property
     @memoized
     def results(self):
-        return TestSuiteResults(self, self.server.do_download(), self.server.do_upload())
+        return TestSuiteResults(self, self.download, self.upload)
 
 class NullOption(object):
     @dataclasses.dataclass
@@ -1052,6 +1071,8 @@ class NullOption(object):
         pre_allocate: bool = True
         single: bool = False
         timeout: float = 10.0
+        ipv4: bool = True
+        ipv6: bool = True
     
     @property
     def args(self):
