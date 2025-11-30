@@ -225,15 +225,13 @@ class Point(object):
             'lot': self.longitude}.items())
         
     def distance_to(self, point):
-        radius = 6371  # km
-        dlat = math.radians(point.latitude - self.latitude)
-        dlon = math.radians(point.longitude - self.longitude)
-        a = (math.sin(dlat / 2) * math.sin(dlat / 2) +
-             math.cos(math.radians(self.latitude)) *
-             math.cos(math.radians(point.latitude)) * 
-             math.sin(dlon / 2) * math.sin(dlon / 2))
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return radius * c
+        radius = 6378.137 # km
+        x1 = math.radians(self.longitude)
+        y1 = math.radians(self.latitude)
+        x2 = math.radians(point.longitude)
+        y2 = math.radians(point.latitude)
+        dx = x2 - x1
+        return radius * math.acos(math.sin(y1) * math.sin(y2) + math.cos(y1) * math.cos(y2) * math.cos(dx))
 
 class ISP(object):
     def __init__(self, name, rating, avg_down, avg_up):
