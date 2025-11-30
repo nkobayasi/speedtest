@@ -62,11 +62,6 @@ def create_counter():
     return _counter
 gcounter = create_counter()
 
-def get_anticache_url(url):
-    parts = urllib.parse.urlparse(url)
-    params = merge_dict(urllib.parse.parse_qs(parts.query), {'x': '%.1f%d' % (time.time() * 1000.0, gcounter(), )})
-    return urllib.parse.urlunparse(parts._replace(query=urllib.parse.urlencode(params, doseq=True)))
-
 class StderrHandler(logging.StreamHandler):
     def __init__(self):
         super().__init__()
@@ -137,6 +132,10 @@ class URL(object):
     
     @property
     def anticache(self):
+        def get_anticache_url(url):
+            parts = urllib.parse.urlparse(url)
+            params = merge_dict(urllib.parse.parse_qs(parts.query), {'x': '%.1f%d' % (time.time() * 1000.0, gcounter(), )})
+            return urllib.parse.urlunparse(parts._replace(query=urllib.parse.urlencode(params, doseq=True)))
         return URL(get_anticache_url(self.url))
     
     @property
