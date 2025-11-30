@@ -162,13 +162,13 @@ class URL(object):
     def resolve4(self):
         if not self.can_resolve4():
             return
-        return self.addrinfo4[0][4][0]
+        return random.choice(self.addrinfo4)[4][0]
     
     @property
     def resolve6(self):
         if not self.can_resolve6():
             return
-        return self.addrinfo6[0][4][0]
+        return random.choice(self.addrinfo6)[4][0]
     
 class HttpClient(object):
     @property
