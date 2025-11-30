@@ -649,15 +649,10 @@ class HTTPUploader(threading.Thread, HttpClient):
         self.terminated = terminated
 
     def run(self):
-        def http_connection_cls(version, url):
-            conn = {
+        def http_connection_cls(url):
+            return {
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[url.scheme]
-            if version == 'ipv4':
-                conn.sock = socket.create_connection((url.resolve4, url.port))
-            elif version == 'ipv6':
-                conn.sock = socket.create_connection((url.resolve6, url.port))
-            return conn
 
         def http_upload_data_cls(preallocate=True):
             return [
@@ -667,12 +662,18 @@ class HTTPUploader(threading.Thread, HttpClient):
         while not self.terminated.wait(timeout=0.1):
             try:
                 url, size = self.requestq.get(timeout=0.1)
+                netloc = url.netloc
+                if self.version == 'ipv4':
+                    netloc = '%s:%d' % (url.resolve4, url.port)
+                elif self.version == 'ipv6':
+                    netloc = '[%s]:%d' % (url.resolve6, url.port)
                 data = http_upload_data_cls(preallocate=True)(size=size)
-                conn = http_connection_cls(self.version, url)(url.netloc)
+                conn = http_connection_cls(url)(netloc)
                 start = time.time()
                 conn.request(
                     'POST', url.anticache.path,
                     headers={
+                        'Host': url.hostname,
                         'User-Agent': self.user_agent,
                         'Cache-Control': 'no-cache',
                         'Content-Type': data.mime_type,
@@ -710,24 +711,25 @@ class HTTPDownloader(threading.Thread, HttpClient):
         self.terminated = terminated
         
     def run(self):
-        def http_connection_cls(version, url):
-            conn = {
+        def http_connection_cls(url):
+            return {
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[url.scheme]
-            if version == 'ipv4':
-                conn.sock = socket.create_connection((url.resolve4, url.port))
-            elif version == 'ipv6':
-                conn.sock = socket.create_connection((url.resolve6, url.port))
-            return conn
 
         while not self.terminated.wait(timeout=0.1):
             try:
                 url = self.requestq.get(timeout=0.1)
-                conn = http_connection_cls(self.version, url)(url.netloc)
+                netloc = url.netloc
+                if self.version == 'ipv4':
+                    netloc = '%s:%d' % (url.resolve4, url.port)
+                elif self.version == 'ipv6':
+                    netloc = '[%s]:%d' % (url.resolve6, url.port)
+                conn = http_connection_cls(url)(netloc)
                 start = time.time()
                 conn.request(
                     'GET', url.anticache.path,
                     headers={
+                        'Host': url.hostname,
                         'User-Agent': self.user_agent,
                         'Cache-Control': 'no-cache', })
                 response = conn.getresponse()
@@ -855,6 +857,7 @@ class Server(object):
                 conn.request(
                     'GET', self.url.join('/latency.txt').anticache.path,
                     headers={
+                        'Host': self.url.hostname,
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
                         'Cache-Control': 'no-cache', })
                 response = conn.getresponse()
@@ -862,7 +865,7 @@ class Server(object):
                 if not (response.status == 200 and response.read(9) == b'test=test'):
                     raise HttpRetrievalError()
                 latencies.append(latency)
-                logger.debug('{!s} GET {} => {} {!s}'.format(self.url, self.url.join('/latency.txt').anticache.path, response.status, latencies))
+                logger.debug('{!s} GET {} => {} {!s}'.format(self.url.hostname, self.url.join('/latency.txt').anticache.path, response.status, latencies))
             except (urllib.error.HTTPError, urllib.error.URLError, socket.error, ssl.SSLError, ssl.CertificateError, http.client.BadStatusLine, HttpRetrievalError) as e:
                 logger.error(e)
                 latencies.append(3600.0)
