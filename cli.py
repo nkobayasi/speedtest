@@ -72,11 +72,17 @@ def main():
     testsuite = speedtest.TestSuite(option=option)
     if option.args.list:
         for server in sorted(testsuite.servers, key=lambda server: server.distance):
-            print('%(id)5d) %(sponsor)s (%(name)s, %(country)s) [%(distance)0.2fkm]' % {
+            supports = []
+            if server.support_ipv4:
+                supports.append('IPv4')
+            if server.support_ipv6:
+                supports.append('IPv6')
+            print('%(id)5d) %(sponsor)s (%(name)s, %(country)s) %(support)s [%(distance)0.2fkm]' % {
                 'id': server.id,
                 'sponsor': server.sponsor,
                 'name': server.name,
                 'country': server.country,
+                'support': ', '.join(supports),
                 'distance': server.distance, })
         return
     if option.args.server:

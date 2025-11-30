@@ -119,7 +119,17 @@ class URL(object):
     
     @property
     def port(self):
-        return self.parse.port
+        port_matrix = {
+            'http': 80,
+            'https': 443, }
+        return self.parse.port or port_matrix[self.scheme]
+    
+    @property
+    def path(self):
+        path = self.parse.path
+        if self.parse.query:
+            path += '?' + self.parse.query
+        return path
     
     @property
     def value(self):
@@ -127,7 +137,7 @@ class URL(object):
     
     @property
     def anticache(self):
-        return get_anticache_url(self.url)
+        return URL(get_anticache_url(self.url))
     
     @property
     @memoized
@@ -631,22 +641,60 @@ class HTTPCancelableUploadData(HTTPUploadData):
         return result
 
 class HTTPUploader(threading.Thread, HttpClient):
-    def __init__(self, resultq, requestq, terminated):
+    def __init__(self, resultq, requestq, terminated, version='both'):
         super().__init__()
+        self.version = version
         self.requestq = requestq
         self.resultq = resultq
         self.terminated = terminated
 
     def run(self):
+        def http_connection_cls(version, url):
+            conn = {
+                'http': http.client.HTTPConnection, 
+                'https': http.client.HTTPSConnection, }[url.scheme]
+            if version == 'ipv4':
+                conn.sock = socket.create_connection((url.resolve4, url.port))
+            elif version == 'ipv6':
+                conn.sock = socket.create_connection((url.resolve6, url.port))
+            return conn
+
+        def http_upload_data_cls(preallocate=True):
+            return [
+                HTTPUploadData0,
+                HTTPUploadData][bool(preallocate)]
+
         while not self.terminated.wait(timeout=0.1):
             try:
-                request = self.requestq.get(timeout=0.1)
-                request.add_header('User-Agent', self.user_agent)
+                url, size = self.requestq.get(timeout=0.1)
+                data = http_upload_data_cls(preallocate=True)(size=size)
+                conn = http_connection_cls(self.version, url)(url.netloc)
                 start = time.time()
-                with urllib.request.urlopen(request) as f:
-                    f.read()
-                    finish = time.time()
-                self.resultq.put({'size': int(request.get_header('Content-length')), 'elapsed': finish - start, })
+                conn.request(
+                    'POST', url.anticache.path,
+                    headers={
+                        'User-Agent': self.user_agent,
+                        'Cache-Control': 'no-cache',
+                        'Content-Type': data.mime_type,
+                        'Content-Length': data.size, },
+                    body=data)
+                response = conn.getresponse()
+                response.read()
+                finish = time.time()
+                self.resultq.put({'size': data.size, 'elapsed': finish - start, })
+                # request = urllib.request.Request(url.anticache,
+                #     method='POST',
+                #     headers={
+                #         'User-Agent': self.user_agent,
+                #         'Cache-Control': 'no-cache',
+                #         'Content-Type': data.mime_type,
+                #         'Content-Length': data.size, },
+                #     data=data)
+                # start = time.time()
+                # with urllib.request.urlopen(request) as f:
+                #     f.read()
+                #     finish = time.time()
+                # self.resultq.put({'size': int(request.get_header('Content-length')), 'elapsed': finish - start, })
             except queue.Empty:
                 pass
             except Exception as e:
@@ -654,22 +702,48 @@ class HTTPUploader(threading.Thread, HttpClient):
                 self.resultq.put({'size': 0, 'elapsed': -1, })
 
 class HTTPDownloader(threading.Thread, HttpClient):
-    def __init__(self, resultq, requestq, terminated):
+    def __init__(self, resultq, requestq, terminated, version='both'):
         super().__init__()
+        self.version = version
         self.requestq = requestq
         self.resultq = resultq
         self.terminated = terminated
         
     def run(self):
+        def http_connection_cls(version, url):
+            conn = {
+                'http': http.client.HTTPConnection, 
+                'https': http.client.HTTPSConnection, }[url.scheme]
+            if version == 'ipv4':
+                conn.sock = socket.create_connection((url.resolve4, url.port))
+            elif version == 'ipv6':
+                conn.sock = socket.create_connection((url.resolve6, url.port))
+            return conn
+
         while not self.terminated.wait(timeout=0.1):
             try:
-                request = self.requestq.get(timeout=0.1)
-                request.add_header('User-Agent', self.user_agent)
+                url = self.requestq.get(timeout=0.1)
+                conn = http_connection_cls(self.version, url)(url.netloc)
                 start = time.time()
-                with urllib.request.urlopen(request) as f:
-                    data = f.read()
-                    finish = time.time()
-                    size = int(f.headers.get('Content-Length', len(data)))
+                conn.request(
+                    'GET', url.anticache.path,
+                    headers={
+                        'User-Agent': self.user_agent,
+                        'Cache-Control': 'no-cache', })
+                response = conn.getresponse()
+                data = response.read()
+                finish = time.time()
+                size = int(response.getheader('Content-Length', len(data)))
+                # request = urllib.request.Request(url.anticache,
+                #     method='GET',
+                #     headers={
+                #         'User-Agent': self.user_agent,
+                #         'Cache-Control': 'no-cache', })
+                # start = time.time()
+                # with urllib.request.urlopen(request) as f:
+                #     data = f.read()
+                #     finish = time.time()
+                #     size = int(f.headers.get('Content-Length', len(data)))
                 self.resultq.put({'size': size, 'elapsed': finish - start, })
             except queue.Empty:
                 pass
@@ -708,7 +782,7 @@ class Server(object):
         self.testsuite = testsuite
         self.id = int(id)
         self.name = name
-        self.url = url
+        self.url = URL(url)
         self.host = host
         self.country = country
         self.cc = cc
@@ -731,7 +805,7 @@ class Server(object):
         return self
         
     def __repr__(self):
-        return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f}>'.format(self.id, self.name, self.country, self.cc, self.url, self.host, self.sponsor, self.point, self.distance)
+        return '<Server: id={},name="{}",country="{}",cc="{}",url="{}",host="{}",sponsor="{}",point={!s},distance={:.2f},ipv4={},ipv6={}>'.format(self.id, self.name, self.country, self.cc, self.url.value, self.host, self.sponsor, self.point, self.distance, self.support_ipv4, self.support_ipv6)
     
     def __str__(self):
         return '{id}) {sponsor} ({name}, {country}) [{distance:.2f}km]'.format(
@@ -745,12 +819,20 @@ class Server(object):
         return iter({
             'id': self.id,
             'name': self.name,
-            'url': self.url,
+            'url': self.url.value,
             'host': self.host,
             'country': self.country,
             'cc': self.cc,
             'sponsor': self.sponsor,
             'location': dict(self.point)}.items())
+    
+    @property
+    def support_ipv4(self):
+        return self.url.can_resolve4()
+
+    @property
+    def support_ipv6(self):
+        return self.url.can_resolve6()
     
     @property
     @memoized
@@ -760,27 +842,27 @@ class Server(object):
     @property
     @memoized
     def latency(self):
-        def get_http_connection_cls(scheme):
+        def http_connection_cls(scheme):
             return {
                 'http': http.client.HTTPConnection, 
                 'https': http.client.HTTPSConnection, }[scheme]
 
         latencies = []
         for _ in range(3):
-            request_url = urllib.parse.urlparse(get_anticache_url(urllib.parse.urljoin(self.url, '/latency.txt')), allow_fragments=False)
-            request_path = '%s?%s' % (request_url.path, request_url.query, ) 
+            conn = http_connection_cls(self.url.scheme)(self.url.netloc)
             try:
-                conn = get_http_connection_cls(request_url.scheme)(request_url.netloc)
                 start = time.perf_counter()
-                conn.request('GET', request_path, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-                    'Cache-Control': 'no-cache', })
+                conn.request(
+                    'GET', self.url.join('/latency.txt').anticache.path,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                        'Cache-Control': 'no-cache', })
                 response = conn.getresponse()
                 latency = time.perf_counter() - start
                 if not (response.status == 200 and response.read(9) == b'test=test'):
                     raise HttpRetrievalError()
                 latencies.append(latency)
-                logger.debug('{!s} GET {} => {} {!s}'.format(request_url, request_path, response.status, latencies))
+                logger.debug('{!s} GET {} => {} {!s}'.format(self.url, self.url.join('/latency.txt').anticache.path, response.status, latencies))
             except (urllib.error.HTTPError, urllib.error.URLError, socket.error, ssl.SSLError, ssl.CertificateError, http.client.BadStatusLine, HttpRetrievalError) as e:
                 logger.error(e)
                 latencies.append(3600.0)
@@ -796,7 +878,7 @@ class Server(object):
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
         for _ in range(threads):
-            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated, version=self.testsuite.ip_version).start()
         
         request_paths = []
         for size in self.testsuite.config.params['download']['sizes']:
@@ -804,13 +886,7 @@ class Server(object):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
         for request_path in request_paths:
-            request = urllib.request.Request(get_anticache_url(urllib.parse.urljoin(self.url, request_path)),
-                method='GET',
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-                    'Cache-Control': 'no-cache', })
-            logger.debug(request.full_url)
-            requestq.put(request)
+            requestq.put(self.url.join(request_path))
         
         results = DownloadResults()
         for _ in range(len(request_paths)):
@@ -819,16 +895,11 @@ class Server(object):
         return results
         
     def do_upload(self, threads=2):
-        def get_http_upload_data_cls(preallocate=True):
-            return [
-                HTTPUploadData0,
-                HTTPUploadData][bool(preallocate)]
-        
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
         for _ in range(threads):
-            HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated).start()
+            HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated, version=self.testsuite.ip_version).start()
         
         sizes = []
         for size in self.testsuite.config.params['upload']['sizes']:
@@ -836,17 +907,7 @@ class Server(object):
                 sizes.append(size)
 
         for size in sizes:
-            data = HTTPUploadData(size=size)
-            request = urllib.request.Request(get_anticache_url(self.url),
-                method='POST',
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-                    'Cache-Control': 'no-cache',
-                    'Content-Type': data.mime_type,
-                    'Content-Length': data.size, },
-                data=data)
-            logger.debug(request.full_url)
-            requestq.put(request)
+            requestq.put((self.url, size))
         
         results = UploadResults()
         for _ in range(len(sizes)):
@@ -958,6 +1019,10 @@ class Servers(object):
                 if server.id in self.testsuite.config.params['ignore_servers'] + self.testsuite.option.args.exclude:
                     continue
                 servers.append(server)
+        if self.testsuite.ip_version == 'ipv4':
+            return list(filter(lambda server: server.support_ipv4, servers))
+        elif self.testsuite.ip_version == 'ipv6':
+            return list(filter(lambda server: server.support_ipv6, servers))
         return servers
     
     def __iter__(self):
@@ -1008,6 +1073,14 @@ class TestSuite(object):
         return sort_by_latency(self.servers.get_closest_servers())[0]
     
     @property
+    def ip_version(self):
+        if self.option.args.ipv6 and not self.option.args.ipv4:
+            return 'ipv6'
+        elif self.option.args.ipv4 and not self.option.args.ipv6:
+            return 'ipv4'
+        return 'both'
+    
+    @property
     @memoized
     def server(self):
         return self.get_best_server()
@@ -1021,17 +1094,17 @@ class TestSuite(object):
     @property
     @memoized
     def download(self):
-        return self.server.do_download()
+        return self.do_download()
 
     @property
     @memoized
     def upload(self):
-        return self.server.do_upload()
+        return self.do_upload()
     
     @property
     @memoized
     def results(self):
-        return TestSuiteResults(self, self.server.do_download(), self.server.do_upload())
+        return TestSuiteResults(self, self.download, self.upload)
 
 class NullOption(object):
     @dataclasses.dataclass
@@ -1040,6 +1113,8 @@ class NullOption(object):
         pre_allocate: bool = True
         single: bool = False
         timeout: float = 10.0
+        ipv4: bool = True
+        ipv6: bool = True
     
     @property
     def args(self):
@@ -1056,8 +1131,7 @@ def main():
     print(u.addrinfo6)
     print(u.resolve4)
     print(u.resolve6)
-    return
-    
+        
     t = TestSuite(option=NullOption())
     print('== Selected Server')
     print(t.server)
