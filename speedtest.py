@@ -226,6 +226,7 @@ class Point(object):
         
     def distance_to(self, point):
         radius = 6378.137 # km
+        # Haversine formula
         x1 = math.radians(self.longitude)
         y1 = math.radians(self.latitude)
         x2 = math.radians(point.longitude)
