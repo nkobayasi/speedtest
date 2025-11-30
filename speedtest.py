@@ -1125,7 +1125,7 @@ class NullOption(object):
 
 def main():
     logger.setLevel(logging.DEBUG)
-    u = URL('https://www.yahoo.com')
+    u = URL('https://www.speedtest.net')
     print(u.port)
     print(u.can_resolve4())
     print(u.can_resolve6())
