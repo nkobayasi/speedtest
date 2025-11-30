@@ -193,7 +193,7 @@ class HttpClient(object):
                 'Cache-Control': 'no-cache', }, headers))
         logger.debug(request.full_url)
         with urllib.request.urlopen(request) as f:
-            return f.read().decode('utf-8')
+            return f.read().decode(f.headers.get_content_charset('utf-8'))
 
     def post(self, url, params={}, headers={}):
         data = urllib.parse.urlencode(params).encode('ascii')
@@ -206,7 +206,7 @@ class HttpClient(object):
             data=data)
         logger.debug('{} {} {}'.format(request.full_url, request.header_items(), request.data))
         with urllib.request.urlopen(request) as f:
-            return f.read().decode('utf-8')
+            return f.read().decode(f.headers.get_content_charset('utf-8'))
 
 class Point(object):
     def __init__(self, latitude, longitude):
