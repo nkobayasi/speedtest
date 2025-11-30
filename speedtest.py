@@ -648,9 +648,9 @@ class HTTPUploader(threading.Thread, HttpClient):
 
         while not self.terminated.wait(timeout=0.1):
             try:
-                request, size = self.requestq.get(timeout=0.1)
+                url, size = self.requestq.get(timeout=0.1)
                 data = HTTPUploadData(size=size)
-                request = urllib.request.Request(self.url.anticache,
+                request = urllib.request.Request(url.anticache,
                     method='POST',
                     headers={
                         'User-Agent': self.user_agent,
@@ -693,7 +693,7 @@ class HTTPDownloader(threading.Thread, HttpClient):
         while not self.terminated.wait(timeout=0.1):
             try:
                 url = self.requestq.get(timeout=0.1)
-                request = urllib.request.Request(url,
+                request = urllib.request.Request(url.anticache,
                     method='GET',
                     headers={
                         'User-Agent': self.user_agent,
@@ -845,7 +845,7 @@ class Server(object):
                 request_paths.append('/random%sx%s.jpg' % (size, size, ))
                 
         for request_path in request_paths:
-            requestq.put(self.url.join(request_path).anticache)
+            requestq.put(self.url.join(request_path))
         
         results = DownloadResults()
         for _ in range(len(request_paths)):
@@ -866,7 +866,7 @@ class Server(object):
                 sizes.append(size)
 
         for size in sizes:
-            requestq.put((self.url.anticache, size))
+            requestq.put((self.url, size))
         
         results = UploadResults()
         for _ in range(len(sizes)):
