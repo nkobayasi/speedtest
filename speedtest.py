@@ -873,12 +873,12 @@ class Server(object):
         return round((sum(latencies) / (len(latencies)*2)) * 1000.0, 3)
     ping=latency
     
-    def do_download(self, threads=2, ip_version='both'):
+    def do_download(self, threads=2):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
         for _ in range(threads):
-            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated, version=ip_version).start()
+            HTTPDownloader(resultq=resultq, requestq=requestq, terminated=terminated, version=self.testsuite.ip_version).start()
         
         request_paths = []
         for size in self.testsuite.config.params['download']['sizes']:
@@ -894,12 +894,12 @@ class Server(object):
         terminated.set()
         return results
         
-    def do_upload(self, threads=2, ip_version='both'):
+    def do_upload(self, threads=2):
         terminated = threading.Event()
         requestq = multiprocessing.Queue()
         resultq = multiprocessing.Queue()
         for _ in range(threads):
-            HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated, version=ip_version).start()
+            HTTPUploader(resultq=resultq, requestq=requestq, terminated=terminated, version=self.testsuite.ip_version).start()
         
         sizes = []
         for size in self.testsuite.config.params['upload']['sizes']:
@@ -999,9 +999,8 @@ class NullServer(Server):
         return 0.0
 
 class Servers(object):
-    def __init__(self, testsuite, ip_version):
+    def __init__(self, testsuite):
         self.testsuite = testsuite
-        self.ip_version = ip_version
 
     @property
     @memoized
@@ -1020,9 +1019,9 @@ class Servers(object):
                 if server.id in self.testsuite.config.params['ignore_servers'] + self.testsuite.option.args.exclude:
                     continue
                 servers.append(server)
-        if self.ip_version == 'ipv4':
+        if self.testsuite.ip_version == 'ipv4':
             return list(filter(lambda server: server.support_ipv4, servers))
-        elif self.ip_version == 'ipv6':
+        elif self.testsuite.ip_version == 'ipv6':
             return list(filter(lambda server: server.support_ipv6, servers))
         return servers
     
@@ -1066,7 +1065,7 @@ class TestSuite(object):
     @property
     @memoized
     def servers(self):
-        return Servers(self, ip_version=self.ip_version)
+        return Servers(self)
     
     def get_best_server(self):
         def sort_by_latency(servers):
@@ -1087,10 +1086,10 @@ class TestSuite(object):
         return self.get_best_server()
     
     def do_download(self):
-        return self.server.do_download(ip_version=self.ip_version)
+        return self.server.do_download()
 
     def do_upload(self):
-        return self.server.do_upload(ip_version=self.ip_version)
+        return self.server.do_upload()
 
     @property
     @memoized
