@@ -439,7 +439,7 @@ class TestSuiteResults:
         self.testsuite = testsuite
         self.download = download
         self.upload = upload
-        self._timestamp = datetime.datetime.now(datetime.UTC)
+        self._timestamp = datetime.datetime.now(datetime.timezone.utc)
 
     @property
     def timestamp(self):
