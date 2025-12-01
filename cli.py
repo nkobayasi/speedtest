@@ -89,11 +89,19 @@ def main():
         download = speedtest.DownloadResults()
         upload = speedtest.UploadResults()
         for server in map(lambda id: testsuite.servers.findById(id), option.args.server):
+            print('Hosted by {sponsor} ({name}) [{distance:.2f}km]: {latency:.1f}ms'.format(
+                sponsor=server.sponsor,
+                name=server.name,
+                distance=server.distance,
+                latency=server.latency))
             download += server.download
             upload += server.upload
-        print('Download: %s%s/s\nUpload: %s%s/s' % (
-            units.Bandwidth(download.speed) / option.args.units[1], option.args.units[0],
-            units.Bandwidth(upload.speed) / option.args.units[1], option.args.units[0], ))
+        if option.args.download:
+            print('Download: %s%s/s' % (
+                units.Bandwidth(download.speed) / option.args.units[1], option.args.units[0], ))
+        if option.args.upload:
+            print('Upload: %s%s/s' % (
+                units.Bandwidth(upload.speed) / option.args.units[1], option.args.units[0], ))
         return
     if option.args.mini:
         server = speedtest.MiniServer(testsuite, url=option.args.mini)
@@ -102,7 +110,11 @@ def main():
             units.Bandwidth(server.upload.speed) / option.args.units[1], option.args.units[0], ))
         return
     
-    print(testsuite.server)
+    print('Hosted by {sponsor} ({name}) [{distance:.2f}km]: {latency:.1f}ms'.format(
+        sponsor=testsuite.server.sponsor,
+        name=testsuite.server.name,
+        distance=testsuite.server.distance,
+        latency=testsuite.server.latency))
     
     if option.args.download:
         print('Download: %s%s/s' % (
