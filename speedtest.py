@@ -487,7 +487,7 @@ class TestSuiteResults:
     def speedtestnet(self):
         return SpeedtestNetResult.factory(self.post())
     
-    def csv(self, with_header=True):
+    def csv(self):
         row = {
             'Server ID': self.server.id,
             'Sponsor': self.server.sponsor,
