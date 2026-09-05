@@ -85,10 +85,31 @@ def main():
                 'support': ', '.join(supports),
                 'distance': server.distance, })
         return
+    if option.args.mini:
+        server = speedtest.MiniServer(testsuite, url=option.args.mini)
+        print('Download: %s%s/s\nUpload: %s%s/s' % (
+            units.Bandwidth(server.download.speed) / option.args.units[1], option.args.units[0],
+            units.Bandwidth(server.upload.speed) / option.args.units[1], option.args.units[0], ))
+        return
+
     if option.args.server:
+        servers = list(map(lambda id: testsuite.servers.findById(id), option.args.server))
+    else:
+        servers = [testsuite.server]
+
+    if option.args.simple:
+        print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
+            testsuite.results.server.latency,
+            units.Bandwidth(testsuite.results.download.speed) / option.args.units[1], option.args.units[0],
+            units.Bandwidth(testsuite.results.upload.speed) / option.args.units[1], option.args.units[0], ))
+    elif option.args.csv:
+        print(testsuite.results.csv())
+    elif option.args.json:
+        print(testsuite.results.json())
+    else:
         download = speedtest.DownloadResults()
         upload = speedtest.UploadResults()
-        for server in map(lambda id: testsuite.servers.findById(id), option.args.server):
+        for server in servers:
             print('Hosted by {sponsor} ({name}) [{distance:.2f}km]: {latency:.1f}ms'.format(
                 sponsor=server.sponsor,
                 name=server.name,
@@ -102,36 +123,19 @@ def main():
         if option.args.upload:
             print('Upload: %s%s/s' % (
                 units.Bandwidth(upload.speed) / option.args.units[1], option.args.units[0], ))
-        return
-    if option.args.mini:
-        server = speedtest.MiniServer(testsuite, url=option.args.mini)
-        print('Download: %s%s/s\nUpload: %s%s/s' % (
-            units.Bandwidth(server.download.speed) / option.args.units[1], option.args.units[0],
-            units.Bandwidth(server.upload.speed) / option.args.units[1], option.args.units[0], ))
-        return
-    
-    print('Hosted by {sponsor} ({name}) [{distance:.2f}km]: {latency:.1f}ms'.format(
-        sponsor=testsuite.server.sponsor,
-        name=testsuite.server.name,
-        distance=testsuite.server.distance,
-        latency=testsuite.server.latency))
-    
-    if option.args.download:
-        print('Download: %s%s/s' % (
-            units.Bandwidth(testsuite.server.download.speed) / option.args.units[1], option.args.units[0], ))
-    if option.args.upload:
-        print('Upload: %s%s/s' % (
-            units.Bandwidth(testsuite.server.upload.speed) / option.args.units[1], option.args.units[0], ))
 
-    if option.args.simple:
-        print('Ping: %fms\nDownload: %s%s/s\nUpload: %s%s/s' % (
-            testsuite.results.server.latency,
-            units.Bandwidth(testsuite.results.download.speed) / option.args.units[1], option.args.units[0],
-            units.Bandwidth(testsuite.results.upload.speed) / option.args.units[1], option.args.units[0], ))
-    elif option.args.csv:
-        print(testsuite.results.csv())
-    elif option.args.json:
-        print(testsuite.results.json())
+    # print('Hosted by {sponsor} ({name}) [{distance:.2f}km]: {latency:.1f}ms'.format(
+    #     sponsor=testsuite.server.sponsor,
+    #     name=testsuite.server.name,
+    #     distance=testsuite.server.distance,
+    #     latency=testsuite.server.latency))
+    #
+    # if option.args.download:
+    #     print('Download: %s%s/s' % (
+    #         units.Bandwidth(testsuite.server.download.speed) / option.args.units[1], option.args.units[0], ))
+    # if option.args.upload:
+    #     print('Upload: %s%s/s' % (
+    #         units.Bandwidth(testsuite.server.upload.speed) / option.args.units[1], option.args.units[0], ))
 
 if __name__ == '__main__':
     main()
