@@ -488,11 +488,7 @@ class TestSuiteResults:
         return SpeedtestNetResult.factory(self.post())
     
     def csv(self):
-        fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
-        buff = io.StringIO(newline='')
-        f = csv.DictWriter(buff, fieldnames=fieldnames)
-        f.writeheader()
-        f.writerow({
+        row = {
             'Server ID': self.server.id,
             'Sponsor': self.server.sponsor,
             'Server Name': self.server.name,
@@ -502,8 +498,11 @@ class TestSuiteResults:
             'Download': self.download.speed,
             'Upload': self.upload.speed,
             'Share': '', # self.speedtestnet.image
-            'IP Address': self.client.ipaddr
-                })
+            'IP Address': self.client.ipaddr}
+        buff = io.StringIO(newline='')
+        f = csv.DictWriter(buff, fieldnames=row.keys())
+        f.writeheader()
+        f.writerow(row)
         return buff.getvalue()
     
     def json(self):
