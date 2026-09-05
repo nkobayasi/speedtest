@@ -114,10 +114,10 @@ class URL(object):
     
     @property
     def port(self):
-        port_matrix = {
+        default_port = {
             'http': 80,
             'https': 443, }
-        return self.parse.port or port_matrix[self.scheme]
+        return self.parse.port or default_port[self.scheme]
     
     @property
     def path(self):
